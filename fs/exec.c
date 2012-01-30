@@ -1304,8 +1304,11 @@ static int check_unsafe_exec(struct linux_binprm *bprm)
  */
 int prepare_binprm(struct linux_binprm *bprm)
 {
+	umode_t mode;
+	struct inode * inode = bprm->file->f_path.dentry->d_inode;
 	int retval;
 
+	mode = inode->i_mode;
 	if (bprm->file->f_op == NULL)
 		return -EACCES;
 
