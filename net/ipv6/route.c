@@ -203,7 +203,7 @@ static struct dst_ops ip6_dst_blackhole_ops = {
 };
 
 static const u32 ip6_template_metrics[RTAX_MAX] = {
-	[RTAX_HOPLIMIT - 1] = 255,
+	[RTAX_HOPLIMIT - 1] = 0,
 };
 
 static struct rt6_info ip6_null_entry_template = {
@@ -620,7 +620,7 @@ int rt6_route_rcv(struct net_device *dev, u8 *opt, int len,
 		rt = rt6_get_dflt_router(gwaddr, dev);
 	else
 		rt = rt6_get_route_info(dev, prefix, rinfo->prefix_len,
-					gwaddr);
+							gwaddr);
 
 	if (rt && !lifetime) {
 		ip6_del_rt(rt);
@@ -1146,7 +1146,7 @@ struct dst_entry *icmp6_dst_alloc(struct net_device *dev,
 	rt->rt6i_dst.addr = fl6->daddr;
 	rt->rt6i_dst.plen = 128;
 	rt->rt6i_idev     = idev;
-	dst_metric_set(&rt->dst, RTAX_HOPLIMIT, 255);
+	dst_metric_set(&rt->dst, RTAX_HOPLIMIT, 0);
 
 	spin_lock_bh(&icmp6_dst_lock);
 	rt->dst.next = icmp6_dst_gc_list;
@@ -1899,7 +1899,8 @@ out:
 
 static struct rt6_info *rt6_add_route_info(struct net_device *dev,
 					   const struct in6_addr *prefix, int prefixlen,
-					   const struct in6_addr *gwaddr, unsigned pref)
+					   const struct in6_addr *gwaddr,
+					   unsigned pref)
 {
 	struct fib6_config cfg = {
 		.fc_table	= addrconf_rt_table(dev, RT6_TABLE_INFO),
@@ -1970,6 +1971,7 @@ struct rt6_info *rt6_add_dflt_router(const struct in6_addr *gwaddr,
 
 	return rt6_get_dflt_router(gwaddr, dev);
 }
+
 
 int rt6_addrconf_purge(struct rt6_info *rt, void *arg) {
 	if (rt->rt6i_flags & (RTF_DEFAULT | RTF_ADDRCONF) &&
