@@ -36,6 +36,8 @@
  *	YOSHIFUJI Hideaki @USAGI	:	improved source address
  *						selection; consider scope,
  *						status etc.
+ *	Harout S. Hedeshian		:	procfs flag to toggle automatic
+ *						addition of prefix route
  */
 
 #include <linux/errno.h>
@@ -165,12 +167,12 @@ static bool ipv6_chk_same_addr(struct net *net, const struct in6_addr *addr,
 static ATOMIC_NOTIFIER_HEAD(inet6addr_chain);
 
 static struct ipv6_devconf ipv6_devconf __read_mostly = {
-	.forwarding			= 0,
-	.hop_limit			= IPV6_DEFAULT_HOPLIMIT,
-	.mtu6				= IPV6_MIN_MTU,
-	.accept_ra			= 1,
+	.forwarding		= 0,
+	.hop_limit		= IPV6_DEFAULT_HOPLIMIT,
+	.mtu6			= IPV6_MIN_MTU,
+	.accept_ra		= 1,
 	.accept_redirects	= 1,
-	.autoconf			= 1,
+	.autoconf		= 1,
 	.force_mld_version	= 0,
 	.dad_transmits		= 1,
 	.rtr_solicits		= MAX_RTR_SOLICITATIONS,
@@ -194,19 +196,20 @@ static struct ipv6_devconf ipv6_devconf __read_mostly = {
 #endif
 #endif
 	.accept_ra_rt_table	= 0,
-	.proxy_ndp			= 0,
-	.accept_source_route = 0,	/* we do not accept RH0 by default. */
+	.proxy_ndp		= 0,
+	.accept_source_route	= 0,	/* we do not accept RH0 by default. */
 	.disable_ipv6		= 0,
-	.accept_dad			= 1,
+	.accept_dad		= 1,
+	.accept_ra_prefix_route = 1,
 };
 
 static struct ipv6_devconf ipv6_devconf_dflt __read_mostly = {
-	.forwarding			= 0,
-	.hop_limit			= IPV6_DEFAULT_HOPLIMIT,
-	.mtu6				= IPV6_MIN_MTU,
-	.accept_ra			= 1,
+	.forwarding		= 0,
+	.hop_limit		= IPV6_DEFAULT_HOPLIMIT,
+	.mtu6			= IPV6_MIN_MTU,
+	.accept_ra		= 1,
 	.accept_redirects	= 1,
-	.autoconf			= 1,
+	.autoconf		= 1,
 	.dad_transmits		= 1,
 	.rtr_solicits		= MAX_RTR_SOLICITATIONS,
 	.rtr_solicit_interval	= RTR_SOLICITATION_INTERVAL,
@@ -229,10 +232,11 @@ static struct ipv6_devconf ipv6_devconf_dflt __read_mostly = {
 #endif
 #endif
 	.accept_ra_rt_table	= 0,
-	.proxy_ndp			= 0,
-	.accept_source_route = 0,	/* we do not accept RH0 by default. */
+	.proxy_ndp		= 0,
+	.accept_source_route	= 0,	/* we do not accept RH0 by default. */
 	.disable_ipv6		= 0,
-	.accept_dad			= 1,
+	.accept_dad		= 1,
+	.accept_ra_prefix_route = 1,
 };
 
 /* IPv6 Wildcard Address and Loopback Address defined by RFC2553 */
@@ -1946,8 +1950,10 @@ void addrconf_prefix_rcv(struct net_device *dev, u8 *opt, int len, bool sllao)
 				flags |= RTF_EXPIRES;
 				expires = jiffies_to_clock_t(rt_expires);
 			}
-			addrconf_prefix_route(&pinfo->prefix, pinfo->prefix_len,
-					      dev, expires, flags);
+			if (dev->ip6_ptr->cnf.accept_ra_prefix_route) {
+				addrconf_prefix_route(&pinfo->prefix,
+					pinfo->prefix_len, dev, expires, flags);
+			}
 		}
 		if (rt)
 			dst_release(&rt->dst);
@@ -4684,6 +4690,13 @@ static struct addrconf_sysctl_table
 			.maxlen         = sizeof(int),
 			.mode           = 0644,
 			.proc_handler   = proc_dointvec
+		},
+		{
+			.procname	= "accept_ra_prefix_route",
+			.data		= &ipv6_devconf.accept_ra_prefix_route,
+			.maxlen		= sizeof(int),
+			.mode		= 0644,
+			.proc_handler	= proc_dointvec,
 		},
 		{
 			/* sentinel */
