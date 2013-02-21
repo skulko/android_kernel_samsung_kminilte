@@ -15,6 +15,7 @@
 
 #include <linux/ipv6.h>
 #include <linux/hardirq.h>
+#include <linux/jhash.h>
 #include <net/if_inet6.h>
 #include <net/ndisc.h>
 #include <net/flow.h>
@@ -422,6 +423,17 @@ static inline u32 __ipv6_addr_jhash(const struct in6_addr *a, const u32 initval)
 static inline u32 ipv6_addr_jhash(const struct in6_addr *a)
 {
 	return __ipv6_addr_jhash(a, ipv6_hash_secret);
+}
+
+/* more secured version of ipv6_addr_hash() */
+static inline u32 ipv6_addr_jhash(const struct in6_addr *a)
+{
+	u32 v = (__force u32)a->s6_addr32[0] ^ (__force u32)a->s6_addr32[1];
+
+	return jhash_3words(v,
+			    (__force u32)a->s6_addr32[2],
+			    (__force u32)a->s6_addr32[3],
+			    ipv6_hash_secret);
 }
 
 static inline int ipv6_addr_any(const struct in6_addr *a)
