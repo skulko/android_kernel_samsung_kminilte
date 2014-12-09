@@ -21,12 +21,21 @@ void s3c_i2c5_cfg_gpio(struct platform_device *dev)
 		s3c_gpio_cfgall_range(EXYNOS4_GPB(6), 2,
 				      S3C_GPIO_SFN(3), S3C_GPIO_PULL_UP);
 
-	else if (soc_is_exynos4212() || soc_is_exynos4412())
+	else if (soc_is_exynos3470() || soc_is_exynos4212()
+		|| soc_is_exynos4412() || soc_is_exynos4415())
 		s3c_gpio_cfgall_range(EXYNOS4_GPB(2), 2,
 				      S3C_GPIO_SFN(3), S3C_GPIO_PULL_UP);
 
 	else if (soc_is_exynos5250())
 		s3c_gpio_cfgall_range(EXYNOS5_GPA2(2), 2,
+				      S3C_GPIO_SFN(3), S3C_GPIO_PULL_UP);
+
+	else if (soc_is_exynos5260())
+		s3c_gpio_cfgall_range(EXYNOS5260_GPB5(2), 2,
+				      S3C_GPIO_SFN(2), S3C_GPIO_PULL_UP);
+
+	else if (soc_is_exynos3250())
+		s3c_gpio_cfgall_range(EXYNOS3_GPB(2), 2,
 				      S3C_GPIO_SFN(3), S3C_GPIO_PULL_UP);
 
 	else

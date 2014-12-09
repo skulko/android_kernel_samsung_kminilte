@@ -248,7 +248,7 @@ static void enable_dc_servo(struct snd_soc_codec *codec)
 	struct wm_hubs_data *hubs = snd_soc_codec_get_drvdata(codec);
 	struct wm_hubs_dcs_cache *cache;
 	s8 offset;
-	u16 reg_l, reg_r, dcs_cfg, dcs_reg;
+	u16 reg_l = 0, reg_r = 0, dcs_cfg, dcs_reg;
 
 	switch (hubs->dcs_readback_mode) {
 	case 2:

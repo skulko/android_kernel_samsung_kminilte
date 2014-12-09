@@ -1,4 +1,4 @@
-/* linux/drivers/media/video/samsung/fimg2d4x/fimg2d4x_blt.c
+/* linux/drivers/media/video/exynos/fimg2d/fimg2d4x_blt.c
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
@@ -16,115 +16,289 @@
 #include <linux/uaccess.h>
 #include <linux/atomic.h>
 #include <linux/dma-mapping.h>
+#include <linux/rmap.h>
+#include <linux/fs.h>
 #include <asm/cacheflush.h>
 #include <plat/sysmmu.h>
 #ifdef CONFIG_PM_RUNTIME
 #include <plat/devs.h>
 #include <linux/pm_runtime.h>
+#include <plat/clock.h>
 #endif
 #include "fimg2d.h"
 #include "fimg2d_clk.h"
 #include "fimg2d4x.h"
 #include "fimg2d_ctx.h"
+#include "fimg2d_cache.h"
 #include "fimg2d_helper.h"
 
-#define CREATE_TRACE_POINTS
-#include "fimg2d_trace.h"
+#define BLIT_TIMEOUT	msecs_to_jiffies(8000)
 
-#define BLIT_TIMEOUT	msecs_to_jiffies(2000)
+#define MAX_PREFBUFS	6
+static int nbufs;
+static struct sysmmu_prefbuf prefbuf[MAX_PREFBUFS];
 
-static inline void fimg2d4x_blit_wait(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
+#define G2D_MAX_VMA_MAPPING	12
+
+static int mapping_can_locked(unsigned long mapping, unsigned long mappings[], int cnt)
 {
-	if (!wait_event_timeout(info->wait_q, !atomic_read(&info->busy), BLIT_TIMEOUT)) {
-		printk(KERN_ERR "[%s] blit wait timeout\n", __func__);
-		fimg2d_dump_command(cmd);
+	int i;
+	if (!mapping)
+		return 0;
 
-		if (!fimg2d4x_blit_done_status(info))
-			info->err = true; /* device error */
+	for (i = 0; i < cnt; i++) {
+		if ((mappings[i] & PAGE_MAPPING_FLAGS) == PAGE_MAPPING_ANON) {
+			if ((mapping & PAGE_MAPPING_FLAGS) == PAGE_MAPPING_ANON) {
+				struct anon_vma *anon = (struct anon_vma *)
+					(mapping & ~PAGE_MAPPING_FLAGS);
+				struct anon_vma *locked = (struct anon_vma *)
+					(mappings[i] & ~PAGE_MAPPING_FLAGS);
+				if (anon->root == locked->root)
+					return 0;
+			}
+		} else if (mappings[i] != 0) {
+			if (mappings[i] == mapping)
+				return 0;
+		}
 	}
+	return 1;
 }
 
-static void fimg2d4x_pre_bitblt(struct fimg2d_control *info, struct fimg2d_bltcmd *cmd)
+static int vma_lock_mapping_one(struct mm_struct *mm, unsigned long addr,
+				size_t len, unsigned long mappings[], int cnt)
 {
-	/* TODO */
-}
+	unsigned long end = addr + len;
+	struct vm_area_struct *vma;
+	struct page *page;
 
-void fimg2d4x_bitblt(struct fimg2d_control *info)
-{
-	struct fimg2d_context *ctx;
-	struct fimg2d_bltcmd *cmd;
-	int ret;
+	for (vma = find_vma(mm, addr);
+		vma && (vma->vm_start <= addr) && (addr < end);
+		addr += vma->vm_end - vma->vm_start, vma = vma->vm_next) {
+		struct anon_vma *anon;
 
-	fimg2d_debug("enter blitter\n");
+		page = follow_page(vma, addr, 0);
+		if (IS_ERR_OR_NULL(page) || !page->mapping)
+			continue;
 
-#ifdef CONFIG_PM_RUNTIME
-	pm_runtime_get_sync(info->dev);
-	fimg2d_debug("pm_runtime_get_sync\n");
-#endif
-	fimg2d_clk_on(info);
-
-	while ((cmd = fimg2d_get_first_command(info))) {
-		ctx = cmd->ctx;
-		if (info->err) {
-			printk(KERN_ERR "[%s] device error\n", __func__);
-			goto blitend;
+		anon = page_get_anon_vma(page);
+		if (!anon) {
+			struct address_space *mapping;
+			get_page(page);
+			mapping = page_mapping(page);
+			if (mapping_can_locked(
+				(unsigned long)mapping, mappings, cnt)) {
+				mutex_lock(&mapping->i_mmap_mutex);
+				mappings[cnt++] = (unsigned long)mapping;
+			}
+			put_page(page);
+		} else {
+			if (mapping_can_locked(
+					(unsigned long)anon | PAGE_MAPPING_ANON,
+					mappings, cnt)) {
+				page_lock_anon_vma(page);
+				mappings[cnt++] = (unsigned long)page->mapping;
+			}
+			put_anon_vma(anon);
 		}
 
-		atomic_set(&info->busy, 1);
-
-		ret = info->configure(info, cmd);
-		if (ret)
-			goto blitend;
-
-		fimg2d4x_pre_bitblt(info, cmd);
-
-		trace_fimg2d_bitblt_start(cmd->seq_no);
-		/* start blit */
-		info->run(info);
-		fimg2d4x_blit_wait(info, cmd);
-		trace_fimg2d_bitblt_end(cmd->seq_no);
-blitend:
-		fimg2d_del_command(info, cmd);
-
-		/* wake up context */
-		if (!atomic_read(&ctx->ncmd))
-			wake_up_all(&ctx->wait_q);
+		if (cnt == G2D_MAX_VMA_MAPPING)
+			break;
 	}
 
-	atomic_set(&info->active, 0);
-
-	fimg2d_clk_off(info);
-#ifdef CONFIG_PM_RUNTIME
-	pm_runtime_put_sync(info->dev);
-	fimg2d_debug("pm_runtime_put_sync\n");
-#endif
-
-	fimg2d_debug("exit blitter\n");
+	return cnt;
 }
 
-static inline int is_opaque(enum color_format fmt)
+static void *vma_lock_mapping(struct mm_struct *mm, struct sysmmu_prefbuf area[], int num_area)
+{
+	unsigned long *mappings = NULL; /* array of G2D_MAX_VMA_MAPPINGS entries */
+	int cnt = 0;
+	int i;
+
+	mappings = (unsigned long *)kzalloc(
+				sizeof(unsigned long) * G2D_MAX_VMA_MAPPING,
+				GFP_KERNEL);
+	if (!mappings)
+		return NULL;
+
+	down_read(&mm->mmap_sem);
+	for (i = 0; i < num_area; i++) {
+		cnt = vma_lock_mapping_one(mm, area[i].base, area[i].size, mappings, cnt);
+		if (cnt == G2D_MAX_VMA_MAPPING) {
+			pr_err("%s: area crosses to many vmas\n", __func__);
+			break;
+		}
+	}
+
+	if (cnt == 0) {
+		kfree(mappings);
+		mappings = NULL;
+	}
+
+	up_read(&mm->mmap_sem);
+	return (void *)mappings;
+}
+
+static void vma_unlock_mapping(void *__mappings)
+{
+	int i;
+	unsigned long *mappings = __mappings;
+
+	if (!mappings)
+		return;
+
+	for (i = 0; i < G2D_MAX_VMA_MAPPING; i++) {
+		if (mappings[i]) {
+			if (mappings[i] & PAGE_MAPPING_ANON) {
+				page_unlock_anon_vma(
+					(struct anon_vma *)(mappings[i] &
+							~PAGE_MAPPING_FLAGS));
+			} else {
+				struct address_space *mapping = (void *)mappings[i];
+				mutex_unlock(&mapping->i_mmap_mutex);
+			}
+		}
+	}
+
+	kfree(mappings);
+}
+
+#ifdef CONFIG_PM_RUNTIME
+static int fimg2d4x_get_clk_cnt(struct clk *clk)
+{
+	return clk->usage;
+}
+#endif
+
+static int fimg2d4x_blit_wait(struct fimg2d_control *ctrl,
+		struct fimg2d_bltcmd *cmd)
+{
+	int ret;
+
+	ret = wait_event_timeout(ctrl->wait_q, !atomic_read(&ctrl->busy),
+			BLIT_TIMEOUT);
+	if (!ret) {
+		fimg2d_err("blit wait timeout\n");
+
+		fimg2d4x_disable_irq(ctrl);
+		if (!fimg2d4x_blit_done_status(ctrl))
+			fimg2d_err("blit not finished\n");
+
+		fimg2d_dump_command(cmd);
+		fimg2d4x_reset(ctrl);
+
+		return -1;
+	}
+	return 0;
+}
+
+static void fimg2d4x_pre_bitblt(struct fimg2d_control *ctrl, struct fimg2d_bltcmd *cmd)
+{
+	struct fimg2d_platdata *pdata = to_fimg2d_plat(ctrl->dev);
+
+	/* disable cci path */
+	g2d_cci_snoop_control(pdata->ip_ver, NON_SHAREABLE_PATH, SHARED_G2D_SEL);
+}
+
+int fimg2d4x_bitblt(struct fimg2d_control *ctrl)
+{
+	int ret = 0;
+	enum addr_space addr_type;
+	struct fimg2d_context *ctx;
+	struct fimg2d_bltcmd *cmd;
+	unsigned long *pgd;
+
+	fimg2d_debug("%s : enter blitter\n", __func__);
+
+	while (1) {
+		cmd = fimg2d_get_command(ctrl);
+		if (!cmd)
+			break;
+
+		ctx = cmd->ctx;
+
+#ifdef CONFIG_PM_RUNTIME
+		if (fimg2d4x_get_clk_cnt(ctrl->clock) == 0)
+			fimg2d_err("2D clock is not set\n");
+#endif
+
+		atomic_set(&ctrl->busy, 1);
+		perf_start(cmd, PERF_SFR);
+		ctrl->configure(ctrl, cmd);
+		perf_end(cmd, PERF_SFR);
+
+		addr_type = cmd->image[IDST].addr.type;
+
+		ctx->vma_lock = vma_lock_mapping(ctx->mm, prefbuf, MAX_IMAGES - 1);
+
+		if (fimg2d_check_pgd(ctx->mm, cmd)) {
+			ret = -EFAULT;
+			goto fail_n_del;
+		}
+
+		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
+			if (!ctx->mm || !ctx->mm->pgd) {
+				atomic_set(&ctrl->busy, 0);
+				goto fail_n_del;
+			}
+			pgd = (unsigned long *)ctx->mm->pgd;
+			exynos_sysmmu_enable(ctrl->dev,
+					(unsigned long)virt_to_phys(pgd));
+			fimg2d_debug("%s : sysmmu enable: pgd %p ctx %p seq_no(%u)\n",
+				__func__, pgd, ctx, cmd->blt.seq_no);
+
+			exynos_sysmmu_set_pbuf(ctrl->dev, nbufs, prefbuf);
+			fimg2d_debug("%s : set smmu prefbuf\n", __func__);
+		}
+
+		fimg2d4x_pre_bitblt(ctrl, cmd);
+
+		perf_start(cmd, PERF_BLIT);
+		/* start blit */
+		fimg2d_debug("%s : start blit\n", __func__);
+		ctrl->run(ctrl);
+		ret = fimg2d4x_blit_wait(ctrl, cmd);
+		perf_end(cmd, PERF_BLIT);
+
+		if (addr_type == ADDR_USER || addr_type == ADDR_USER_CONTIG) {
+			exynos_sysmmu_disable(ctrl->dev);
+			fimg2d_debug("sysmmu disable\n");
+		}
+fail_n_del:
+		vma_unlock_mapping(ctx->vma_lock);
+		fimg2d_del_command(ctrl, cmd);
+	}
+
+	fimg2d_debug("%s : exit blitter\n", __func__);
+
+	return ret;
+}
+
+static inline bool is_opaque(enum color_format fmt)
 {
 	switch (fmt) {
 	case CF_ARGB_8888:
 	case CF_ARGB_1555:
 	case CF_ARGB_4444:
-		return 0;
+		return false;
 
 	default:
-		return 1;
+		return true;
 	}
 }
 
 static int fast_op(struct fimg2d_bltcmd *cmd)
 {
+	int fop;
 	int sa, da, ga;
-	int fop = cmd->op;
+	struct fimg2d_param *p;
 	struct fimg2d_image *src, *msk, *dst;
-	struct fimg2d_param *p = &cmd->param;
 
+	p = &cmd->blt.param;
 	src = &cmd->image[ISRC];
 	msk = &cmd->image[IMSK];
 	dst = &cmd->image[IDST];
+
+	fop = cmd->blt.op;
 
 	if (msk->addr.type)
 		return fop;
@@ -137,7 +311,7 @@ static int fast_op(struct fimg2d_bltcmd *cmd)
 	else
 		sa = is_opaque(src->fmt) ? 0xff : 0;
 
-	switch (cmd->op) {
+	switch (cmd->blt.op) {
 	case BLIT_OP_SRC_OVER:
 		/* Sc + (1-Sa)*Dc = Sc */
 		if (sa == 0xff && ga == 0xff)
@@ -188,22 +362,23 @@ static int fast_op(struct fimg2d_bltcmd *cmd)
 	return fop;
 }
 
-static int fimg2d4x_configure(struct fimg2d_control *info,
-				struct fimg2d_bltcmd *cmd)
+static int fimg2d4x_configure(struct fimg2d_control *ctrl,
+		struct fimg2d_bltcmd *cmd)
 {
 	int op;
 	enum image_sel srcsel, dstsel;
-	struct fimg2d_param *p = &cmd->param;
+	struct fimg2d_param *p;
 	struct fimg2d_image *src, *msk, *dst;
+	struct sysmmu_prefbuf *pbuf;
 
-	fimg2d_debug("ctx %p seq_no(%u)\n", cmd->ctx, cmd->seq_no);
+	fimg2d_debug("ctx %p seq_no(%u)\n", cmd->ctx, cmd->blt.seq_no);
 
+	p = &cmd->blt.param;
 	src = &cmd->image[ISRC];
 	msk = &cmd->image[IMSK];
 	dst = &cmd->image[IDST];
 
-	/* TODO: batch blit */
-	fimg2d4x_reset(info);
+	fimg2d4x_init(ctrl);
 
 	/* src and dst select */
 	srcsel = dstsel = IMG_MEMORY;
@@ -213,106 +388,140 @@ static int fimg2d4x_configure(struct fimg2d_control *info,
 	switch (op) {
 	case BLIT_OP_SOLID_FILL:
 		srcsel = dstsel = IMG_FGCOLOR;
-		fimg2d4x_set_fgcolor(info, p->solid_color);
+		fimg2d4x_set_fgcolor(ctrl, p->solid_color);
 		break;
 	case BLIT_OP_CLR:
 		srcsel = dstsel = IMG_FGCOLOR;
-		fimg2d4x_set_color_fill(info, 0);
+		fimg2d4x_set_color_fill(ctrl, 0);
 		break;
 	case BLIT_OP_DST:
-		return -1;	/* nop */
+		srcsel = dstsel = IMG_FGCOLOR;
+		break;
 	default:
 		if (!src->addr.type) {
 			srcsel = IMG_FGCOLOR;
-			fimg2d4x_set_fgcolor(info, p->solid_color);
+			fimg2d4x_set_fgcolor(ctrl, p->solid_color);
 		}
 
 		if (op == BLIT_OP_SRC)
 			dstsel = IMG_FGCOLOR;
 
-		fimg2d4x_enable_alpha(info, p->g_alpha);
-		fimg2d4x_set_alpha_composite(info, op, p->g_alpha);
+		fimg2d4x_enable_alpha(ctrl, p->g_alpha);
+		fimg2d4x_set_alpha_composite(ctrl, op, p->g_alpha);
 		if (p->premult == NON_PREMULTIPLIED)
-			fimg2d4x_set_premultiplied(info);
+			fimg2d4x_set_premultiplied(ctrl);
 		break;
 	}
 
-	fimg2d4x_set_src_type(info, srcsel);
-	fimg2d4x_set_dst_type(info, dstsel);
+	fimg2d4x_set_src_type(ctrl, srcsel);
+	fimg2d4x_set_dst_type(ctrl, dstsel);
+
+	nbufs = 0;
+	pbuf = &prefbuf[nbufs];
 
 	/* src */
 	if (src->addr.type) {
-		fimg2d4x_set_src_image(info, src, cmd->dma[ISRC]);
-		fimg2d4x_set_src_rect(info, &src->rect);
-		fimg2d4x_set_src_repeat(info, &p->repeat);
+		fimg2d4x_set_src_image(ctrl, src);
+		fimg2d4x_set_src_rect(ctrl, &src->rect);
+		fimg2d4x_set_src_repeat(ctrl, &p->repeat);
 		if (p->scaling.mode)
-			fimg2d4x_set_src_scaling(info, &p->scaling, &p->repeat);
+			fimg2d4x_set_src_scaling(ctrl, &p->scaling, &p->repeat);
+
+		/* prefbuf */
+		pbuf->base = cmd->dma[ISRC].base.addr;
+		pbuf->size = cmd->dma[ISRC].base.size;
+		nbufs++;
+		pbuf++;
+		if (src->order == P2_CRCB || src->order == P2_CBCR) {
+			pbuf->base = cmd->dma[ISRC].plane2.addr;
+			pbuf->size = cmd->dma[ISRC].plane2.size;
+			nbufs++;
+			pbuf++;
+		}
 	}
 
 	/* msk */
 	if (msk->addr.type) {
-		fimg2d4x_enable_msk(info);
-		fimg2d4x_set_msk_image(info, msk, cmd->dma[IMSK]);
-		fimg2d4x_set_msk_rect(info, &msk->rect);
-		fimg2d4x_set_msk_repeat(info, &p->repeat);
+		fimg2d4x_enable_msk(ctrl);
+		fimg2d4x_set_msk_image(ctrl, msk);
+		fimg2d4x_set_msk_rect(ctrl, &msk->rect);
+		fimg2d4x_set_msk_repeat(ctrl, &p->repeat);
 		if (p->scaling.mode)
-			fimg2d4x_set_msk_scaling(info, &p->scaling, &p->repeat);
+			fimg2d4x_set_msk_scaling(ctrl, &p->scaling, &p->repeat);
+
+		/* prefbuf */
+		pbuf->base = cmd->dma[IMSK].base.addr;
+		pbuf->size = cmd->dma[IMSK].base.size;
+		nbufs++;
+		pbuf++;
 	}
 
 	/* dst */
 	if (dst->addr.type) {
-		fimg2d4x_set_dst_image(info, dst, cmd->dma[IDST]);
-		fimg2d4x_set_dst_rect(info, &dst->rect);
+		fimg2d4x_set_dst_image(ctrl, dst);
+		fimg2d4x_set_dst_rect(ctrl, &dst->rect);
 		if (p->clipping.enable)
-			fimg2d4x_enable_clipping(info, &p->clipping);
+			fimg2d4x_enable_clipping(ctrl, &p->clipping);
+
+		/* prefbuf */
+		pbuf->base = cmd->dma[IDST].base.addr;
+		pbuf->size = cmd->dma[IDST].base.size;
+		nbufs++;
+		pbuf++;
+		if (dst->order == P2_CRCB || dst->order == P2_CBCR) {
+			pbuf->base = cmd->dma[IDST].plane2.addr;
+			pbuf->size = cmd->dma[IDST].plane2.size;
+			nbufs++;
+			pbuf++;
+		}
 	}
 
 	/* bluescreen */
 	if (p->bluscr.mode)
-		fimg2d4x_set_bluescreen(info, &p->bluscr);
+		fimg2d4x_set_bluescreen(ctrl, &p->bluscr);
 
 	/* rotation */
 	if (p->rotate)
-		fimg2d4x_set_rotation(info, p->rotate);
+		fimg2d4x_set_rotation(ctrl, p->rotate);
 
 	/* dithering */
 	if (p->dither)
-		fimg2d4x_enable_dithering(info);
+		fimg2d4x_enable_dithering(ctrl);
 
 	return 0;
 }
 
-static void fimg2d4x_run(struct fimg2d_control *info)
+static void fimg2d4x_run(struct fimg2d_control *ctrl)
 {
 	fimg2d_debug("start blit\n");
-	fimg2d4x_enable_irq(info);
-	fimg2d4x_clear_irq(info);
-	fimg2d4x_start_blit(info);
+	fimg2d4x_enable_irq(ctrl);
+	fimg2d4x_clear_irq(ctrl);
+	fimg2d4x_start_blit(ctrl);
 }
 
-static void fimg2d4x_stop(struct fimg2d_control *info)
+static void fimg2d4x_stop(struct fimg2d_control *ctrl)
 {
-	if (fimg2d4x_is_blit_done(info)) {
+	if (fimg2d4x_is_blit_done(ctrl)) {
 		fimg2d_debug("blit done\n");
-		fimg2d4x_disable_irq(info);
-		fimg2d4x_clear_irq(info);
-		atomic_set(&info->busy, 0);
-		wake_up(&info->wait_q);
+		fimg2d4x_disable_irq(ctrl);
+		fimg2d4x_clear_irq(ctrl);
+		atomic_set(&ctrl->busy, 0);
+		wake_up(&ctrl->wait_q);
 	}
 }
 
-static void fimg2d4x_dump(struct fimg2d_control *info)
+static void fimg2d4x_dump(struct fimg2d_control *ctrl)
 {
-	fimg2d4x_dump_regs(info);
+	fimg2d4x_dump_regs(ctrl);
 }
 
-int fimg2d_register_ops(struct fimg2d_control *info)
+int fimg2d_register_ops(struct fimg2d_control *ctrl)
 {
-	info->blit = fimg2d4x_bitblt;
-	info->configure = fimg2d4x_configure;
-	info->run = fimg2d4x_run;
-	info->dump = fimg2d4x_dump;
-	info->stop = fimg2d4x_stop;
+	ctrl->blit = fimg2d4x_bitblt;
+	ctrl->configure = fimg2d4x_configure;
+	ctrl->run = fimg2d4x_run;
+	ctrl->dump = fimg2d4x_dump;
+	ctrl->stop = fimg2d4x_stop;
 
 	return 0;
 }

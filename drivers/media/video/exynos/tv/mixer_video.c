@@ -18,6 +18,8 @@
 #include <linux/version.h>
 #include <linux/timer.h>
 #include <linux/export.h>
+#include <plat/iovmm.h>
+#include <mach/devfreq.h>
 
 #include <media/exynos_mc.h>
 #include <media/v4l2-ioctl.h>
@@ -35,12 +37,19 @@ int __devinit mxr_acquire_video(struct mxr_device *mdev,
 	int i;
 	int ret = 0;
 	struct v4l2_subdev *sd;
+	struct s5p_mxr_platdata *pdata = mdev->pdata;
 
 	mdev->alloc_ctx = mdev->vb2->init(mdev);
 	if (IS_ERR_OR_NULL(mdev->alloc_ctx)) {
 		mxr_err(mdev, "could not acquire vb2 allocator\n");
 		ret = PTR_ERR(mdev->alloc_ctx);
 		goto fail;
+	}
+	if (is_ip_ver_5r) {
+		exynos_create_iovmm(mdev->dev, 1, 0);
+		iovmm_reserve(mdev->dev, MXR_VA, MXR_VA);
+	} else {
+		exynos_create_iovmm(mdev->dev, 3, 0);
 	}
 
 	/* registering outputs */
@@ -108,7 +117,7 @@ void mxr_release_video(struct mxr_device *mdev)
 	mdev->vb2->cleanup(mdev->alloc_ctx);
 }
 
-static void tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
+static int tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
 {
 	struct mxr_device *mdev = pipe->layer->mdev;
 	struct media_entity *me = &pipe->layer->vfd.entity;
@@ -121,8 +130,9 @@ static void tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
 
 	/* find remote pad through enabled link */
 	pad = media_entity_remote_source(pad);
-	if (media_entity_type(pad->entity) != MEDIA_ENT_T_V4L2_SUBDEV
-			|| pad == NULL)
+	if (pad == NULL)
+		return -EPIPE;
+	if (media_entity_type(pad->entity) != MEDIA_ENT_T_V4L2_SUBDEV)
 		mxr_warn(mdev, "cannot find remote pad\n");
 
 	sd = media_entity_to_v4l2_subdev(pad->entity);
@@ -131,6 +141,8 @@ static void tv_graph_pipeline_stream(struct mxr_pipeline *pipe, int on)
 	md_data.mxr_data_from = FROM_MXR_VD;
 	v4l2_set_subdevdata(sd, &md_data);
 	v4l2_subdev_call(sd, video, s_stream, on);
+
+	return 0;
 }
 
 static int mxr_querycap(struct file *file, void *priv,
@@ -142,7 +154,7 @@ static int mxr_querycap(struct file *file, void *priv,
 
 	strlcpy(cap->driver, MXR_DRIVER_NAME, sizeof cap->driver);
 	strlcpy(cap->card, layer->vfd.name, sizeof cap->card);
-	sprintf(cap->bus_info, "%d", layer->idx);
+	snprintf(cap->bus_info, sizeof(cap->bus_info), "%d", layer->idx);
 	cap->version = KERNEL_VERSION(0, 1, 0);
 	cap->capabilities = V4L2_CAP_STREAMING |
 		V4L2_CAP_VIDEO_OUTPUT | V4L2_CAP_VIDEO_OUTPUT_MPLANE;
@@ -276,6 +288,7 @@ static void mxr_mplane_fill(struct v4l2_plane_pix_format *planes,
 	const struct mxr_format *fmt, u32 width, u32 height)
 {
 	int i;
+	int y_size, cb_size;
 
 	memset(planes, 0, sizeof(*planes) * fmt->num_subframes);
 	for (i = 0; i < fmt->num_planes; ++i) {
@@ -287,7 +300,13 @@ static void mxr_mplane_fill(struct v4l2_plane_pix_format *planes,
 		u32 sizeimage = bl_width * bl_height * blk->size;
 		u16 bytesperline = bl_width * blk->size / blk->height;
 
-		plane->sizeimage += sizeimage;
+		if (fmt->fourcc == V4L2_PIX_FMT_NV12MT) {
+			y_size = ALIGN(width, 128) * ALIGN(height, 64);
+			cb_size = ALIGN(width, 128) * ALIGN(height / 2, 64);
+			plane->sizeimage += i ? cb_size : y_size;
+		} else {
+			plane->sizeimage += sizeimage;
+		}
 		plane->bytesperline = max(plane->bytesperline, bytesperline);
 	}
 }
@@ -385,8 +404,11 @@ static int mxr_check_ctrl_val(struct v4l2_control *ctrl)
 
 	switch (ctrl->id) {
 	case V4L2_CID_TV_LAYER_BLEND_ALPHA:
+		if (ctrl->value < 0 || ctrl->value > 0xff)
+			ret = -ERANGE;
+		break;
 	case V4L2_CID_TV_CHROMA_VALUE:
-		if (ctrl->value < 0 || ctrl->value > 256)
+		if (ctrl->value < 0 || ctrl->value > 0xffffff)
 			ret = -ERANGE;
 		break;
 	}
@@ -425,18 +447,12 @@ static int mxr_s_ctrl(struct file *file, void *fh, struct v4l2_control *ctrl)
 	case V4L2_CID_TV_CHROMA_VALUE:
 		layer->chroma_val = (u32)v;
 		break;
-	case V4L2_CID_TV_LAYER_PRIO:
-		layer->prio = (u8)v;
-		/* This can be turned on/off each layer while streaming */
-		if (layer->pipe.state == MXR_PIPELINE_STREAMING)
-			mxr_reg_set_layer_prio(mdev);
-		break;
 	case V4L2_CID_TV_SET_COLOR_RANGE:
 		mdev->color_range = v;
 		v4l2_subdev_call(to_outsd(mdev), core, s_ctrl, ctrl);
 		break;
-	case V4L2_CID_TV_UPDATE:
-		ret = mxr_update(mdev);
+	case V4L2_CID_TV_BLANK:
+		mdev->blank = v;
 		break;
 	case V4L2_CID_TV_ENABLE_HDMI_AUDIO:
 	case V4L2_CID_TV_SET_NUM_CHANNELS:
@@ -445,6 +461,15 @@ static int mxr_s_ctrl(struct file *file, void *fh, struct v4l2_control *ctrl)
 	case V4L2_CID_TV_SET_ASPECT_RATIO:
 	case V4L2_CID_TV_HDCP_ENABLE:
 		v4l2_subdev_call(to_outsd(mdev), core, s_ctrl, ctrl);
+		break;
+	case V4L2_CID_TV_LAYER_PRIO:
+		layer->prio = (u8)v;
+		/* This can be turned on/off each layer while streaming */
+		if (layer->pipe.state == MXR_PIPELINE_STREAMING)
+			mxr_reg_set_layer_prio(mdev);
+		break;
+	case V4L2_CID_TV_UPDATE:
+		ret = mxr_update(mdev);
 		break;
 	default:
 		mxr_err(mdev, "invalid control id\n");
@@ -476,6 +501,7 @@ static int mxr_g_ctrl(struct file *file, void *fh, struct v4l2_control *ctrl)
 	switch (ctrl->id) {
 	case V4L2_CID_TV_HPD_STATUS:
 	case V4L2_CID_TV_MAX_AUDIO_CHANNELS:
+	case V4L2_CID_TV_SOURCE_PHY_ADDR:
 		v4l2_subdev_call(to_outsd(mdev), core, g_ctrl, ctrl);
 		break;
 	default:
@@ -508,16 +534,10 @@ static int mxr_s_dv_preset(struct file *file, void *fh,
 	struct mxr_device *mdev = layer->mdev;
 	int ret;
 
+	mxr_dbg(mdev, "%s start\n", __func__);
+
 	/* lock protects from changing sd_out */
 	mutex_lock(&mdev->mutex);
-
-	/* preset change cannot be done while there is an entity
-	 * dependant on output configuration
-	 */
-	if (mdev->n_output > 0) {
-		mutex_unlock(&mdev->mutex);
-		return -EBUSY;
-	}
 
 	ret = v4l2_subdev_call(to_outsd(mdev), video, s_dv_preset, preset);
 
@@ -550,14 +570,6 @@ static int mxr_s_std(struct file *file, void *fh, v4l2_std_id *norm)
 
 	/* lock protects from changing sd_out */
 	mutex_lock(&mdev->mutex);
-
-	/* standard change cannot be done while there is an entity
-	 * dependant on output configuration
-	 */
-	if (mdev->n_output > 0) {
-		mutex_unlock(&mdev->mutex);
-		return -EBUSY;
-	}
 
 	ret = v4l2_subdev_call(to_outsd(mdev), video, s_std_output, *norm);
 
@@ -617,18 +629,13 @@ static int mxr_s_output(struct file *file, void *fh, unsigned int i)
 		return -EINVAL;
 
 	mutex_lock(&mdev->mutex);
-	if (mdev->n_output > 0) {
-		ret = -EBUSY;
-		goto done;
-	}
 	mdev->current_output = i;
 	vfd->tvnorms = 0;
 	v4l2_subdev_call(to_outsd(mdev), video, g_tvnorms_output,
 		&vfd->tvnorms);
+	mutex_unlock(&mdev->mutex);
 	mxr_dbg(mdev, "tvnorms = %08llx\n", vfd->tvnorms);
 
-done:
-	mutex_unlock(&mdev->mutex);
 	return ret;
 }
 
@@ -883,7 +890,7 @@ static int queue_setup(struct vb2_queue *vq, const struct v4l2_format *pfmt,
 	*nplanes = fmt->num_subframes;
 	for (i = 0; i < fmt->num_subframes; ++i) {
 		alloc_ctxs[i] = layer->mdev->alloc_ctx;
-		sizes[i] = PAGE_ALIGN(planes[i].sizeimage);
+		sizes[i] = planes[i].sizeimage;
 		mxr_dbg(mdev, "size[%d] = %08x\n", i, sizes[i]);
 	}
 
@@ -938,7 +945,7 @@ static int buffer_fence_wait(struct mxr_device *mdev, struct mxr_buffer *buffer)
 	ret = sync_fence_wait(fence, 1000);
 	if (ret == -ETIME) {
 		mxr_warn(mdev, "sync_fence_wait timeout");
-		ret = sync_fence_wait(fence, 10 * MSEC_PER_SEC);
+		ret = sync_fence_wait(fence, -1);
 	}
 	if (ret)
 		mxr_warn(mdev, "sync_fence_wait error");
@@ -1018,16 +1025,24 @@ static void mxr_fill_update(struct mxr_layer *layer,
 
 static int mxr_update(struct mxr_device *mdev)
 {
+	struct s5p_mxr_platdata *pdata = mdev->pdata;
 	struct mxr_layer **layers = mdev->sub_mxr[MXR_SUB_MIXER0].layer;
 	struct mxr_update *update;
-	int i;
+	int i, layer_num;
 
 	update = kzalloc(sizeof(struct mxr_update), GFP_KERNEL);
 	if (!update)
 		return -ENOMEM;
 
-	/* start from 1, only the graphic layers are supported */
-	for (i = 1; i < ARRAY_SIZE(update->layers); i++)
+	/*
+	 * If there is VP, have to manage from 0.
+	 * Start from 1, only the graphic layers are supported.
+	 */
+	if (is_ip_ver_4)
+		layer_num = 0;
+	else
+		layer_num = 1;
+	for (i = layer_num; i < ARRAY_SIZE(update->layers); i++)
 		mxr_fill_update(layers[i], &update->layers[i]);
 
 	update->mdev = mdev;
@@ -1079,6 +1094,8 @@ static int buf_prepare(struct vb2_buffer *vb)
 
 			/* find sink pad of hdmi or sdo through enabled link*/
 			pad = media_entity_remote_source(pad);
+			if (pad == NULL)
+				return -EPIPE;
 			if (media_entity_type(pad->entity)
 					== MEDIA_ENT_T_V4L2_SUBDEV) {
 				enable = 1;
@@ -1103,7 +1120,7 @@ static int buf_prepare(struct vb2_buffer *vb)
 		return -ERANGE;
 	}
 
-	return 0;
+	return mxr_buf_sync_prepare(vb);
 }
 
 static int start_streaming(struct vb2_queue *vq, unsigned int count)
@@ -1111,8 +1128,10 @@ static int start_streaming(struct vb2_queue *vq, unsigned int count)
 	struct mxr_layer *layer = vb2_get_drv_priv(vq);
 	struct mxr_device *mdev = layer->mdev;
 	struct mxr_pipeline *pipe = &layer->pipe;
+	struct s5p_mxr_platdata *pdata = mdev->pdata;
 	unsigned long flags;
-	int ret;
+	int n_layer = 0;
+	int ret = 0;
 
 	mxr_dbg(mdev, "%s\n", __func__);
 
@@ -1123,11 +1142,10 @@ static int start_streaming(struct vb2_queue *vq, unsigned int count)
 
 	/* enable mixer clock */
 	ret = mxr_power_get(mdev);
-	if (ret)
-		mxr_err(mdev, "power on failed\n");
-
-	/* block any changes in output configuration */
-	mxr_output_get(mdev);
+	if (ret < 0) {
+		mxr_err(mdev, "power on failed for graphic layer\n");
+		ret = -ENODEV;
+	}
 
 	/* update layers geometry */
 	mxr_layer_geo_fix(layer);
@@ -1140,14 +1158,21 @@ static int start_streaming(struct vb2_queue *vq, unsigned int count)
 		pipe->state = MXR_PIPELINE_STREAMING;
 	spin_unlock_irqrestore(&layer->enq_slock, flags);
 
+	/* Informing BTS of the number of layers turned on */
+	if (is_ip_ver_5s || is_ip_ver_5r) {
+		n_layer = mdev->layer_en.graph0 + mdev->layer_en.graph1
+			+ mdev->layer_en.graph2 + mdev->layer_en.graph3;
+		exynos5_update_media_layers(TYPE_MIXER, n_layer);
+	}
+
 	/* enabling layer in hardware */
 	layer->ops.stream_set(layer, MXR_ENABLE);
 	/* store starting entity ptr on the tv graphic pipeline */
 	pipe->layer = layer;
 	/* start streaming all entities on the tv graphic pipeline */
-	tv_graph_pipeline_stream(pipe, 1);
+	ret = tv_graph_pipeline_stream(pipe, 1);
 
-	return 0;
+	return ret;
 }
 
 static int stop_streaming(struct vb2_queue *vq)
@@ -1157,6 +1182,9 @@ static int stop_streaming(struct vb2_queue *vq)
 	unsigned long flags;
 	struct mxr_buffer *buf, *buf_tmp;
 	struct mxr_pipeline *pipe = &layer->pipe;
+	struct s5p_mxr_platdata *pdata = mdev->pdata;
+	int n_layer = 0;
+	int ret = 0;
 
 	mxr_dbg(mdev, "%s\n", __func__);
 
@@ -1200,15 +1228,19 @@ static int stop_streaming(struct vb2_queue *vq)
 	/* starting entity on the pipeline */
 	pipe->layer = layer;
 	/* stop streaming all entities on the pipeline */
-	tv_graph_pipeline_stream(pipe, 0);
+	ret = tv_graph_pipeline_stream(pipe, 0);
 
-	/* allow changes in output configuration */
-	mxr_output_put(mdev);
+	/* Informing BTS of the number of layers turned on */
+	if (is_ip_ver_5s || is_ip_ver_5r) {
+		n_layer = mdev->layer_en.graph0 + mdev->layer_en.graph1
+			+ mdev->layer_en.graph2 + mdev->layer_en.graph3;
+		exynos5_update_media_layers(TYPE_MIXER, n_layer);
+	}
 
 	/* disable mixer clock */
 	mxr_power_put(mdev);
 
-	return 0;
+	return ret;
 }
 
 static struct vb2_ops mxr_video_qops = {
@@ -1217,6 +1249,7 @@ static struct vb2_ops mxr_video_qops = {
 	.wait_prepare = wait_unlock,
 	.wait_finish = wait_lock,
 	.buf_prepare = buf_prepare,
+	.buf_finish = mxr_buf_sync_finish,
 	.start_streaming = start_streaming,
 	.stop_streaming = stop_streaming,
 };
@@ -1282,7 +1315,7 @@ struct mxr_layer *mxr_base_layer_create(struct mxr_device *mdev,
 	layer->mdev = mdev;
 	layer->idx = idx;
 	layer->ops = *ops;
-	layer->prio = idx + 2;
+	layer->prio = MXR_MAX_LAYERS - idx;
 
 	spin_lock_init(&layer->enq_slock);
 	INIT_LIST_HEAD(&layer->enq_list);
@@ -1317,7 +1350,7 @@ struct mxr_layer *mxr_base_layer_create(struct mxr_device *mdev,
 	layer->vb_queue = (struct vb2_queue) {
 		.name = kstrdup(name, GFP_KERNEL),
 		.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE,
-		.io_modes = VB2_MMAP | VB2_DMABUF,
+		.io_modes = VB2_MMAP | VB2_DMABUF | VB2_USERPTR,
 		.drv_priv = layer,
 		.buf_struct_size = sizeof(struct mxr_buffer),
 		.ops = &mxr_video_qops,

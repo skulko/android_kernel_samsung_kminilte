@@ -62,15 +62,19 @@ void **s5p_mfc_mem_init_multi(struct device *dev, unsigned int ctx_num)
 	struct s5p_mfc_dev *m_dev = platform_get_drvdata(to_platform_device(dev));
 	void **alloc_ctxes;
 	unsigned int i;
+	unsigned int heap_mask;
 
 	alloc_ctxes = kmalloc(sizeof(*alloc_ctxes) * ctx_num, GFP_KERNEL);
 	if (!alloc_ctxes)
 		return NULL;
-
+	heap_mask = (VB2ION_CTX_VMCONTIG |
+			VB2ION_CTX_IOMMU |
+			VB2ION_CTX_UNCACHED);
+	if (IS_MFCV5(m_dev))
+		(heap_mask |= VB2ION_CTX_FIXIOMAP);
 	for (i = 0; i < ctx_num; i++) {
 		alloc_ctxes[i] = vb2_ion_create_context(dev,
-				IS_MFCV6(m_dev) ? SZ_4K : SZ_128K,
-				VB2ION_CTX_VMCONTIG | VB2ION_CTX_IOMMU);
+				IS_MFCV6(m_dev) ? SZ_4K : SZ_128K , heap_mask);
 		if (IS_ERR(alloc_ctxes[i]))
 			break;
 	}
@@ -166,46 +170,67 @@ int s5p_mfc_mem_cache_flush(struct vb2_buffer *vb, u32 plane_no)
 	return 0;
 }
 #elif defined(CONFIG_VIDEOBUF2_ION)
-void s5p_mfc_cache_clean_priv(void *cookie)
+void s5p_mfc_mem_set_cacheable(void *alloc_ctx, bool cacheable)
 {
-	int nents = 0;
-	struct scatterlist *sg;
-
-	sg = vb2_ion_get_sg(cookie, &nents);
-
-	dma_sync_sg_for_device(NULL, sg, nents, DMA_TO_DEVICE);
+	vb2_ion_set_cached(alloc_ctx, cacheable);
 }
 
-void s5p_mfc_cache_inv_priv(void *cookie)
+int s5p_mfc_mem_clean_vb(struct vb2_buffer *vb, u32 num_planes)
 {
-	int nents = 0;
-	struct scatterlist *sg;
+	struct vb2_ion_cookie *cookie;
+	int i;
+	size_t size;
 
-	sg = vb2_ion_get_sg(cookie, &nents);
+	for (i = 0; i < num_planes; i++) {
+		cookie = vb2_plane_cookie(vb, i);
+		if (!cookie)
+			continue;
 
-	dma_sync_sg_for_device(NULL, sg, nents, DMA_FROM_DEVICE);
+		size = vb->v4l2_planes[i].length;
+		vb2_ion_sync_for_device(cookie, 0, size, DMA_TO_DEVICE);
+	}
+
+	return 0;
 }
 
-void s5p_mfc_cache_clean(struct vb2_buffer *vb, int plane_no)
+int s5p_mfc_mem_inv_vb(struct vb2_buffer *vb, u32 num_planes)
 {
-	void *cookie = vb2_plane_cookie(vb, plane_no);
-	int nents = 0;
-	struct scatterlist *sg;
+	struct vb2_ion_cookie *cookie;
+	int i;
+	size_t size;
 
-	sg = vb2_ion_get_sg(cookie, &nents);
+	for (i = 0; i < num_planes; i++) {
+		cookie = vb2_plane_cookie(vb, i);
+		if (!cookie)
+			continue;
 
-	dma_sync_sg_for_device(NULL, sg, nents, DMA_TO_DEVICE);
+		size = vb->v4l2_planes[i].length;
+		vb2_ion_sync_for_device(cookie, 0, size, DMA_FROM_DEVICE);
+	}
+
+	return 0;
 }
 
-void s5p_mfc_cache_inv(struct vb2_buffer *vb, int plane_no)
+int s5p_mfc_mem_flush_vb(struct vb2_buffer *vb, u32 num_planes)
 {
-	void *cookie = vb2_plane_cookie(vb, plane_no);
-	int nents = 0;
-	struct scatterlist *sg;
+	struct vb2_ion_cookie *cookie;
+	int i;
+	enum dma_data_direction dir;
+	size_t size;
 
-	sg = vb2_ion_get_sg(cookie, &nents);
+	dir = V4L2_TYPE_IS_OUTPUT(vb->v4l2_buf.type) ?
+					DMA_TO_DEVICE : DMA_FROM_DEVICE;
 
-	dma_sync_sg_for_device(NULL, sg, nents, DMA_FROM_DEVICE);
+	for (i = 0; i < num_planes; i++) {
+		cookie = vb2_plane_cookie(vb, i);
+		if (!cookie)
+			continue;
+
+		size = vb->v4l2_planes[i].length;
+		vb2_ion_sync_for_device(cookie, 0, size, dir);
+	}
+
+	return 0;
 }
 
 void s5p_mfc_mem_suspend(void *alloc_ctx)
@@ -216,15 +241,5 @@ void s5p_mfc_mem_suspend(void *alloc_ctx)
 int s5p_mfc_mem_resume(void *alloc_ctx)
 {
 	return vb2_ion_attach_iommu(alloc_ctx);
-}
-
-void s5p_mfc_mem_set_cacheable(void *alloc_ctx, bool cacheable)
-{
-	vb2_ion_set_cached(alloc_ctx, cacheable);
-}
-
-int s5p_mfc_mem_cache_flush(struct vb2_buffer *vb, u32 plane_no)
-{
-	return vb2_ion_cache_flush(vb, plane_no);
 }
 #endif

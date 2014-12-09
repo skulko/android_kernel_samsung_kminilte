@@ -28,6 +28,9 @@
 #include "logger.h"
 
 #include <asm/ioctls.h>
+#ifdef CONFIG_SEC_DEBUG
+#include <mach/sec_debug.h>
+#endif
 
 /*
  * struct logger_log - represents a specific log, such as 'main' or 'radio'
@@ -433,6 +436,23 @@ static ssize_t do_write_log_from_user(struct logger_log *log,
 			 */
 			return -EFAULT;
 
+	/* print as kernel log if the log string starts with "!@" */
+	if (count >= 2) {
+		if (log->buffer[log->w_off] == '!'
+		    && log->buffer[logger_offset(log, log->w_off + 1)] == '@') {
+			char tmp[256];
+			int i;
+			for (i = 0; i < min(count, sizeof(tmp) - 1); i++)
+				tmp[i] =
+				    log->buffer[logger_offset \
+						(log, log->w_off + i)];
+			tmp[i] = '\0';
+			printk(KERN_INFO"%s\n", tmp);
+#ifdef CONFIG_SEC_DEBUG_TSP_LOG
+			sec_debug_tsp_log("%s\n", tmp);
+#endif
+		}
+	}
 	log->w_off = logger_offset(log, log->w_off + count);
 
 	return count;
@@ -561,12 +581,14 @@ static int logger_release(struct inode *ignored, struct file *file)
 	if (file->f_mode & FMODE_READ) {
 		struct logger_reader *reader = file->private_data;
 		struct logger_log *log = reader->log;
-
+		unsigned long start = jiffies;
 		mutex_lock(&log->mutex);
 		list_del(&reader->list);
 		mutex_unlock(&log->mutex);
 
 		kfree(reader);
+		pr_info("%s: took %d msec\n", __func__,
+			jiffies_to_msecs(jiffies - start));
 	}
 
 	return 0;
@@ -733,9 +755,9 @@ static struct logger_log VAR = { \
 	.size = SIZE, \
 };
 
-DEFINE_LOGGER_DEVICE(log_main, LOGGER_LOG_MAIN, 256*1024)
+DEFINE_LOGGER_DEVICE(log_main, LOGGER_LOG_MAIN, 2048*1024)
 DEFINE_LOGGER_DEVICE(log_events, LOGGER_LOG_EVENTS, 256*1024)
-DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 256*1024)
+DEFINE_LOGGER_DEVICE(log_radio, LOGGER_LOG_RADIO, 2048*1024)
 DEFINE_LOGGER_DEVICE(log_system, LOGGER_LOG_SYSTEM, 256*1024)
 
 static struct logger_log *get_log_from_minor(int minor)
@@ -788,6 +810,10 @@ static int __init logger_init(void)
 	if (unlikely(ret))
 		goto out;
 
+#ifdef CONFIG_SEC_DEBUG
+	sec_getlog_supply_loggerinfo(_buf_log_main, _buf_log_radio,
+				     _buf_log_events, _buf_log_system);
+#endif
 out:
 	return ret;
 }

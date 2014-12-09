@@ -15,6 +15,63 @@
 
 #include "fimc-lite-core.h"
 
+void flite_hw_clr_ovf_indication(struct flite_dev *dev)
+{
+	u32 cfg = 0;
+	u32 cfg_wdofst = 0;
+	cfg = readl(dev->regs + FLITE_REG_CIWDOFST);
+
+	/* clear overflow */
+	cfg_wdofst = cfg;
+	cfg_wdofst |= FLITE_REG_CIWDOFST_CLROVFIY;
+	cfg_wdofst |= FLITE_REG_CIWDOFST_CLROVFICB;
+	cfg_wdofst |= FLITE_REG_CIWDOFST_CLROVFICR;
+
+	writel(cfg_wdofst, dev->regs + FLITE_REG_CIWDOFST);
+
+	/* restore overflow clear */
+	cfg_wdofst = cfg;
+	cfg_wdofst &= ~(FLITE_REG_CIWDOFST_CLROVFIY);
+	cfg_wdofst &= ~(FLITE_REG_CIWDOFST_CLROVFICB);
+	cfg_wdofst &= ~(FLITE_REG_CIWDOFST_CLROVFICR);
+
+	writel(cfg_wdofst, dev->regs + FLITE_REG_CIWDOFST);
+}
+
+void flite_hw_set_ovf_interrupt_source(struct flite_dev *dev)
+{
+	u32 cfg = 0;
+	cfg = readl(dev->regs + FLITE_REG_CIGCTRL);
+
+	/* for checking overflow */
+	cfg &= ~FLITE_REG_CIGCTRL_IRQ_OVFEN0_DISABLE;
+
+	writel(cfg, dev->regs + FLITE_REG_CIGCTRL);
+}
+
+void flite_hw_clr_ovf_interrupt_source(struct flite_dev *dev)
+{
+	u32 cfg = 0;
+	cfg = readl(dev->regs + FLITE_REG_CIGCTRL);
+
+	/* for checking overflow */
+	cfg |= FLITE_REG_CIGCTRL_IRQ_OVFEN0_DISABLE;
+
+	writel(cfg, dev->regs + FLITE_REG_CIGCTRL);
+}
+
+int flite_hw_check_ovf_interrupt_source(struct flite_dev *dev)
+{
+	u32 cfg = 0;
+	cfg = readl(dev->regs + FLITE_REG_CIGCTRL);
+
+	/* for checking overflow */
+	if (cfg & FLITE_REG_CIGCTRL_IRQ_OVFEN0_DISABLE)
+		return true;
+
+	return false;
+}
+
 void flite_hw_set_cam_source_size(struct flite_dev *dev)
 {
 	struct flite_frame *f_frame =  &dev->s_frame;
@@ -28,12 +85,25 @@ void flite_hw_set_cam_source_size(struct flite_dev *dev)
 	writel(cfg, dev->regs + FLITE_REG_CISRCSIZE);
 }
 
+void flite_hw_set_lite_B_csis_source(struct flite_dev *dev, enum flite_b_csis_source src)
+{
+#ifdef USE_FLITEB_CSISA
+	u32 cfg = readl(dev->regs + FLITE_REG_CIGENERAL);
+	if (src == FLITE_SRC_CSIS_B)
+		cfg &= ~FLITE_REG_CIGENERAL_B_SRC_CSIS_B;
+	else
+		cfg |= FLITE_REG_CIGENERAL_B_SRC_CSIS_A;
+
+	writel(cfg, dev->regs + FLITE_REG_CIGENERAL);
+#endif
+}
+
 void flite_hw_set_cam_channel(struct flite_dev *dev)
 {
 	u32 cfg = readl(dev->regs + FLITE_REG_CIGENERAL);
 
 	if (dev->id == 0)
-		cfg &= FLITE_REG_CIGENERAL_CAM_A;
+		cfg &= ~(FLITE_REG_CIGENERAL_CAM_MASK);
 	else
 		cfg |= FLITE_REG_CIGENERAL_CAM_B;
 
@@ -50,6 +120,7 @@ void flite_hw_reset(struct flite_dev *dev)
 	writel(cfg, dev->regs + FLITE_REG_CIGCTRL);
 
 	do {
+		cfg = readl(dev->regs + FLITE_REG_CIGCTRL);
 		if (cfg & FLITE_REG_CIGCTRL_SWRST_RDY)
 			break;
 		usleep_range(1000, 5000);
@@ -148,10 +219,28 @@ void flite_hw_set_output_dma(struct flite_dev *dev, bool enable)
 	u32 cfg = 0;
 	cfg = readl(dev->regs + FLITE_REG_CIGCTRL);
 
-	if (enable)
+	if (enable) {
+		cfg |= FLITE_REG_CIGCTRL_OUT_LOCAL_DISABLE;
+		cfg |= FLITE_REG_CIGCTRL_OUT_GSCL_DISABLE;
 		cfg &= ~FLITE_REG_CIGCTRL_ODMA_DISABLE;
-	else
+	} else {
 		cfg |= FLITE_REG_CIGCTRL_ODMA_DISABLE;
+		cfg &= ~FLITE_REG_CIGCTRL_OUT_LOCAL_DISABLE;
+		cfg &= ~FLITE_REG_CIGCTRL_OUT_GSCL_DISABLE;
+	}
+
+	writel(cfg, dev->regs + FLITE_REG_CIGCTRL);
+}
+
+void flite_hw_set_output_gscaler(struct flite_dev *dev, bool enable)
+{
+	u32 cfg = 0;
+	cfg = readl(dev->regs + FLITE_REG_CIGCTRL);
+
+	if (enable)
+		cfg &= ~FLITE_REG_CIGCTRL_OUT_GSCL_ENABLE;
+	else
+		cfg |= FLITE_REG_CIGCTRL_OUT_GSCL_ENABLE;
 
 	writel(cfg, dev->regs + FLITE_REG_CIGCTRL);
 }
@@ -237,7 +326,7 @@ void flite_hw_set_last_capture_end_clear(struct flite_dev *dev)
 	writel(cfg, dev->regs + FLITE_REG_CISTATUS2);
 }
 
-#if defined(CONFIG_MEDIA_CONTROLLER) && defined(CONFIG_ARCH_EXYNOS5)
+#if defined(CONFIG_MEDIA_CONTROLLER)
 void flite_hw_set_inverse_polarity(struct flite_dev *dev)
 {
 	struct v4l2_subdev *sd = dev->pipeline.sensor;
@@ -287,9 +376,17 @@ void flite_hw_set_dma_offset(struct flite_dev *dev)
 void flite_hw_set_output_addr(struct flite_dev *dev,
 			     struct flite_addr *addr, int index)
 {
-	flite_info("dst_buf[%d]: 0x%X", index, addr->y);
+	u32 cfg = 0;
 
-	writel(addr->y, dev->regs + FLITE_REG_CIOSA);
+	flite_dbg("dst_buf[%d]: 0x%X", index, addr->y);
+
+	cfg = readl(dev->regs + FLITE_REG_CIOSA(index));
+	if (!cfg) {
+		writel(addr->y, dev->regs + FLITE_REG_CIOSA(index));
+	} else if (cfg != addr->y) {
+		flite_err("address is invalid(%08X != %08X)\n", cfg, addr->y);
+		writel(addr->y, dev->regs + FLITE_REG_CIOSA(index));
+	}
 }
 
 void flite_hw_set_out_order(struct flite_dev *dev)
@@ -315,6 +412,15 @@ void flite_hw_set_out_order(struct flite_dev *dev)
 			break;
 
 		}
+	} else {
+		switch (frame->fmt->code) {
+		case V4L2_MBUS_FMT_SGRBG8_1X8:
+			cfg |= FLITE_REG_CIODMAFMT_1D_DMA;
+			break;
+		default :
+			flite_err("not supported mbus_code");
+			break;
+		}
 	}
 	writel(cfg, dev->regs + FLITE_REG_CIODMAFMT);
 }
@@ -331,6 +437,29 @@ void flite_hw_set_output_size(struct flite_dev *dev)
 
 	writel(cfg, dev->regs + FLITE_REG_CIOCAN);
 }
+
+void flite_hw_set_output_frame_count_seq(struct flite_dev *dev, int cnt)
+{
+	u32 i;
+
+	for (i = 0; i < cnt; i++) {
+		writel(FLITE_REG_CIFCNTSEQ_FRMCNT_MASK(cnt),
+			dev->regs + FLITE_REG_CIFCNTSEQ);
+	}
+}
+
+void flite_hw_set_output_index(struct flite_dev *dev, bool enable, int index)
+{
+	u32 cfg;
+
+	cfg = readl(dev->regs + FLITE_REG_CIFCNTSEQ);
+	if (enable)
+		cfg |= 1 << index;
+	else
+		cfg &= ~(1 << index);
+	writel(cfg, dev->regs + FLITE_REG_CIFCNTSEQ);
+}
+
 #else
 void flite_hw_set_inverse_polarity(struct flite_dev *dev) {}
 void flite_hw_set_sensor_type(struct flite_dev *dev) {}

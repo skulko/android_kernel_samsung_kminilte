@@ -485,40 +485,8 @@ enum {
 	 * Attached value: u32 value
 	 * Default value: 500 Milliseconds
 	 */
+
 	KBASE_CONFIG_ATTR_POWER_MANAGEMENT_DVFS_FREQ,
-
-	/**
-	 * Power Management poweroff tick granuality. This is in nanoseconds to
-	 * allow HR timer support.
-	 *
-	 * On each scheduling tick, the power manager core may decide to:
-	 * -# Power off one or more shader cores
-	 * -# Power off the entire GPU
-	 *
-	 * Attached value: number in nanoseconds
-	 * Default value: @ref DEFAULT_PM_GPU_POWEROFF_TICK_NS,
-	 */
-	KBASE_CONFIG_ATTR_PM_GPU_POWEROFF_TICK_NS,
-
-	/**
-	 * Power Manager number of ticks before shader cores are powered off
-	 *
-	 * Attached value: unsigned 32-bit kbasep_pm_device_data::poweroff_shader_ticks<br>
-	 * Default value: @ref DEFAULT_PM_POWEROFF_TICK_SHADER
-	 *
-	 * @see KBASE_CONFIG_ATTR_PM_GPU_POWEROFF_TICK_NS
-	 */
-	KBASE_CONFIG_ATTR_PM_POWEROFF_TICK_SHADER,
-
-	/**
-	 * Power Manager number of ticks before GPU is powered off
-	 *
-	 * Attached value: unsigned 32-bit kbasep_pm_device_data::poweroff_gpu_ticks<br>
-	 * Default value: @ref DEFAULT_PM_POWEROFF_TICK_GPU
-	 *
-	 * @see KBASE_CONFIG_ATTR_PM_GPU_POWEROFF_TICK_NS
-	 */
-	KBASE_CONFIG_ATTR_PM_POWEROFF_TICK_GPU,
 
 	/**
 	 * End of attribute list indicator.
@@ -729,7 +697,6 @@ typedef int (*kbase_cpuprops_clock_speed_function) (u32 *clock_speed);
  */
 typedef int (*kbase_gpuprops_clock_speed_function) (u32 *clock_speed);
 
-#ifdef CONFIG_MALI_PLATFORM_FAKE
 /*
  * @brief Specifies start and end of I/O memory region.
  */
@@ -754,7 +721,6 @@ typedef struct kbase_platform_config {
 	u32 midgard_type;
 } kbase_platform_config;
 
-#endif				/* CONFIG_MALI_PLATFORM_FAKE */
 /**
  * @brief Return character string associated with the given midgard type.
  *
@@ -763,6 +729,17 @@ typedef struct kbase_platform_config {
  * @return  Pointer to NULL-terminated character array associated with the given midgard type
  */
 const char *kbasep_midgard_type_to_string(u32 midgard_type);
+
+/**
+ * @brief Gets the count of attributes in array
+ *
+ * Function gets the count of attributes in array. Note that end of list indicator is also included.
+ *
+ * @param[in]  attributes     Array of attributes
+  *
+ * @return  Number of attributes in the array including end of list indicator.
+ */
+int kbasep_get_config_attribute_count(const kbase_attribute *attributes);
 
 /**
  * @brief Gets the next config attribute with the specified ID from the array of attributes.

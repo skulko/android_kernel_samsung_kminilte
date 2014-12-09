@@ -11,7 +11,6 @@ fb-y                              := fbmem.o fbmon.o fbcmap.o fbsysfs.o \
                                      modedb.o fbcvt.o
 fb-objs                           := $(fb-y)
 
-obj-$(CONFIG_ADF)		  += adf/
 obj-$(CONFIG_VT)		  += console/
 obj-$(CONFIG_LOGO)		  += logo/
 obj-y				  += backlight/
@@ -123,7 +122,9 @@ obj-$(CONFIG_FB_S1D13XXX)	  += s1d13xxxfb.o
 obj-$(CONFIG_FB_SH7760)		  += sh7760fb.o
 obj-$(CONFIG_FB_IMX)              += imxfb.o
 obj-$(CONFIG_FB_MIPI_DSIM)	  += s5p_mipi_dsi.o s5p_mipi_dsi_lowlevel.o
-obj-$(CONFIG_FB_S3C)		  += s3c-fb.o
+obj-$(CONFIG_FB_S5P_MDNIE)        += ielcd.o mdnie.o mdnie_tuning.o
+obj-$(CONFIG_FB_S5P_MDNIE_LITE)   += mdnie_lite.o mdnie_lite_tuning.o
+obj-$(CONFIG_FB_S3C)		  += s3c-fb.o exynos_display_handler.o decon_display/
 obj-$(CONFIG_S5P_DP)		  += s5p-dp-core.o s5p-dp-reg.o
 obj-$(CONFIG_FB_S3C2410)	  += s3c2410fb.o
 obj-$(CONFIG_FB_FSL_DIU)	  += fsl-diu-fb.o
@@ -175,4 +176,3 @@ ifeq ($(CONFIG_MALI_T6XX),y)
     EXTRA_CFLAGS += -Idrivers/gpu/arm/t6xx
 endif
 
-CFLAGS_s3c-fb.o := -Iinclude/linux

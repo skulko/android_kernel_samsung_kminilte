@@ -143,6 +143,8 @@ struct s5p_dp_platdata {
 	void (*backlight_off)(void);
 	void (*lcd_on)(void);
 	void (*lcd_off)(void);
+
+	int (*clock_init)(void);
 };
 
 #endif /* _S5P_DP_H */

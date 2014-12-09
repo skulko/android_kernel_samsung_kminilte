@@ -41,14 +41,17 @@
 #endif
 #include "fimc-is-param.h"
 
-#define FIMC_IS_MODULE_NAME			"exynos5-fimc-is"
+#define FIMC_IS_DRV_NAME			"exynos5-fimc-is"
 #define FIMC_IS_SENSOR_ENTITY_NAME		"exynos5-fimc-is-sensor"
 #define FIMC_IS_FRONT_ENTITY_NAME		"exynos5-fimc-is-front"
 #define FIMC_IS_BACK_ENTITY_NAME		"exynos5-fimc-is-back"
-#define FIMC_IS_VIDEO_BAYER_NAME		"exynos5-fimc-is-bayer"
-#define FIMC_IS_VIDEO_SCALERC_NAME		"exynos5-fimc-is-scalerc"
-#define FIMC_IS_VIDEO_3DNR_NAME			"exynos5-fimc-is-3dnr"
-#define FIMC_IS_VIDEO_SCALERP_NAME		"exynos5-fimc-is-scalerp"
+
+
+#define FIMC_IS_VIDEO_NAME(name)		(FIMC_IS_DRV_NAME"-"name)
+#define FIMC_IS_VIDEO_BAYER_NAME		FIMC_IS_VIDEO_NAME("bayer")
+#define FIMC_IS_VIDEO_SCALERC_NAME		FIMC_IS_VIDEO_NAME("scalerc")
+#define FIMC_IS_VIDEO_3DNR_NAME			FIMC_IS_VIDEO_NAME("3dnr")
+#define FIMC_IS_VIDEO_SCALERP_NAME		FIMC_IS_VIDEO_NAME("scalerp")
 
 #define FIMC_IS_A5_DEBUG_LEVEL			3
 

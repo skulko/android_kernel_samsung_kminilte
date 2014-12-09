@@ -93,13 +93,8 @@ void sync_timeline_destroy(struct sync_timeline *obj)
 {
 	obj->destroyed = true;
 
-	/*
-	 * If this is not the last reference, signal any children
-	 * that their parent is going away.
-	 */
-
-	if (!kref_put(&obj->kref, sync_timeline_free))
-		sync_timeline_signal(obj);
+	sync_timeline_signal(obj);
+	kref_put(&obj->kref, sync_timeline_free);
 }
 EXPORT_SYMBOL(sync_timeline_destroy);
 
@@ -310,6 +305,48 @@ struct sync_fence *sync_fence_create(const char *name, struct sync_pt *pt)
 }
 EXPORT_SYMBOL(sync_fence_create);
 
+#if defined(CONFIG_MALI400)
+static int sync_fence_copy_pts(struct sync_fence *dst, struct sync_fence *src)
+{
+	struct list_head *pos, *test_pos;
+
+	list_for_each(pos, &src->pt_list_head) {
+		struct sync_pt *orig_pt =
+			container_of(pos, struct sync_pt, pt_list);
+		struct sync_pt *new_pt;
+
+		/* Skip already signaled points */
+		if (1 == orig_pt->status)
+			continue;
+
+		list_for_each(test_pos, &src->pt_list_head) {
+			struct sync_pt *test_pt =
+				container_of(pos, struct sync_pt, pt_list);
+			if (orig_pt->parent == test_pt->parent) {
+				int diff;
+				diff = orig_pt->parent->ops->compare(orig_pt,
+								     test_pt);
+				if (diff == -1) {
+					/* Skip orig_pt; another point will
+					 * signal after it */
+					continue;
+				}
+				break;
+			}
+		}
+
+		new_pt = sync_pt_dup(orig_pt);
+
+		if (new_pt == NULL)
+			return -ENOMEM;
+
+		new_pt->fence = dst;
+		list_add(&new_pt->pt_list, &dst->pt_list_head);
+	}
+
+	return 0;
+}
+#else	// defined(CONFIG_MALI400)
 static int sync_fence_copy_pts(struct sync_fence *dst, struct sync_fence *src)
 {
 	struct list_head *pos;
@@ -375,6 +412,7 @@ static int sync_fence_merge_pts(struct sync_fence *dst, struct sync_fence *src)
 
 	return 0;
 }
+#endif
 
 static void sync_fence_detach_pts(struct sync_fence *fence)
 {
@@ -461,9 +499,25 @@ struct sync_fence *sync_fence_merge(const char *name,
 	if (err < 0)
 		goto err;
 
+#if defined(CONFIG_MALI400)
+	err = sync_fence_copy_pts(fence, b);
+#else
 	err = sync_fence_merge_pts(fence, b);
+#endif
 	if (err < 0)
 		goto err;
+
+#if defined(CONFIG_MALI400)
+	/* Make sure there is at least one point in the fence */
+	if (list_empty(&fence->pt_list_head)) {
+		struct sync_pt *orig_pt = list_first_entry(&a->pt_list_head,
+						struct sync_pt, pt_list);
+		struct sync_pt *new_pt = sync_pt_dup(orig_pt);
+
+		new_pt->fence = fence;
+		list_add(&new_pt->pt_list, &fence->pt_list_head);
+	}
+#endif
 
 	list_for_each(pos, &fence->pt_list_head) {
 		struct sync_pt *pt =

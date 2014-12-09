@@ -1,5 +1,5 @@
 #
-# (C) COPYRIGHT 2011-2013 ARM Limited. All rights reserved.
+# (C) COPYRIGHT 2011-2012 ARM Limited. All rights reserved.
 #
 # This program is free software and is provided to you under the terms of the
 # GNU General Public License version 2 as published by the Free Software
@@ -49,14 +49,11 @@ endif
 ifeq ($(CONFIG_MALI_ERROR_INJECT),y)
 	SCONS_CFLAGS+=-DCONFIG_MALI_ERROR_INJECT
 endif
-ifneq ($(CONFIG_MALI_PLATFORM_FAKE),n)
+ifeq ($(CONFIG_MALI_PLATFORM_FAKE),y)
 	SCONS_CFLAGS+=-DCONFIG_MALI_PLATFORM_FAKE
 endif
 ifeq ($(CONFIG_MALI_PLATFORM_VEXPRESS),y)
 	SCONS_CFLAGS+=-DCONFIG_MALI_PLATFORM_VEXPRESS
-endif
-ifeq ($(CONFIG_MALI_PLATFORM_VEXPRESS_VIRTEX7_40MHZ),y)
-	SCONS_CFLAGS+=-DCONFIG_MALI_PLATFORM_VEXPRESS_VIRTEX7_40MHZ
 endif
 ifeq ($(CONFIG_MALI_GATOR_SUPPORT),y)
 	SCONS_CFLAGS+=-DCONFIG_MALI_GATOR_SUPPORT

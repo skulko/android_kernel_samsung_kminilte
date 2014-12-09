@@ -21,11 +21,10 @@ struct es305_platform_data {
 	int gpio_wakeup;
 	int gpio_reset;
 
-	void (*clk_enable)(bool enable);
+	void (*clk_enable)(bool enable, bool forced);
 
-	/* PORT A = 1, B = 2, C = 3, D = 4 */
-	int passthrough_src;
-	int passthrough_dst;
+	int passthrough_cmd[2];
+	int passthrough_num;
 };
 
 #endif

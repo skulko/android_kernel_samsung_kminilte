@@ -49,10 +49,10 @@ int __init exynos4_jpeg_setup_clock(struct device *dev,
 		goto err_clk2;
 	}
 
-	mout_mpll = clk_get(dev, "mout_mpll_user");
+	mout_mpll = clk_get(dev, "mout_mpll_user_top");
 
 	if (IS_ERR(mout_mpll)) {
-		dev_err(dev, "failed to get mout_mpll for jpeg\n");
+		dev_err(dev, "failed to get mout_mpll_user_top for jpeg\n");
 		goto err_clk2;
 	}
 
@@ -71,12 +71,7 @@ int __init exynos4_jpeg_setup_clock(struct device *dev,
 
 	clk_put(mout_jpeg);
 	clk_put(mout_mpll);
-
-	ret = clk_enable(sclk);
-	if (ret < 0) {
-		dev_err(dev, "failed to clk_enable of aclk for jpeg\n");
-		goto err_clk2;
-	}
+	clk_put(sclk);
 
 	return 0;
 

@@ -37,9 +37,16 @@
 #include <linux/mm.h>
 #include <linux/oom.h>
 #include <linux/sched.h>
+#include <linux/fs.h>
 #include <linux/swap.h>
 #include <linux/rcupdate.h>
 #include <linux/notifier.h>
+
+#define LMK_COUNT_READ
+
+#ifdef LMK_COUNT_READ
+static uint32_t lmk_count = 0;
+#endif
 
 static uint32_t lowmem_debug_level = 1;
 static int lowmem_adj[6] = {
@@ -77,9 +84,9 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	int selected_tasksize = 0;
 	int selected_oom_score_adj;
 	int array_size = ARRAY_SIZE(lowmem_adj);
-	int other_free = global_page_state(NR_FREE_PAGES) - totalreserve_pages;
+	int other_free = global_page_state(NR_FREE_PAGES);
 	int other_file = global_page_state(NR_FILE_PAGES) -
-						global_page_state(NR_SHMEM);
+			global_page_state(NR_SHMEM) - total_swapcache_pages;
 
 	if (lowmem_adj_size < array_size)
 		array_size = lowmem_adj_size;
@@ -164,6 +171,9 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		send_sig(SIGKILL, selected, 0);
 		set_tsk_thread_flag(selected, TIF_MEMDIE);
 		rem -= selected_tasksize;
+#ifdef LMK_COUNT_READ
+		lmk_count++;
+#endif
 	}
 	lowmem_print(4, "lowmem_shrink %lu, %x, return %d\n",
 		     sc->nr_to_scan, sc->gfp_mask, rem);
@@ -278,6 +288,10 @@ module_param_array_named(adj, lowmem_adj, int, &lowmem_adj_size,
 module_param_array_named(minfree, lowmem_minfree, uint, &lowmem_minfree_size,
 			 S_IRUGO | S_IWUSR);
 module_param_named(debug_level, lowmem_debug_level, uint, S_IRUGO | S_IWUSR);
+
+#ifdef LMK_COUNT_READ
+module_param_named(lmkcount, lmk_count, uint, S_IRUGO);
+#endif
 
 module_init(lowmem_init);
 module_exit(lowmem_exit);

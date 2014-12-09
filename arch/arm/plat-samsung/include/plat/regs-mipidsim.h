@@ -23,34 +23,58 @@
 #define S5P_DSIM_MDRESOL	(0x18)
 #define S5P_DSIM_MVPORCH	(0x1c)	/* Main display Vporch register */
 #define S5P_DSIM_MHPORCH	(0x20)	/* Main display Hporch register */
-#define S5P_DSIM_MSYNC		(0x24)	/* Main display sync area register
-*/
+#define S5P_DSIM_MSYNC		(0x24)	/* Main display sync area register */
 
 /* Sub display image resolution register */
 #define S5P_DSIM_SDRESOL	(0x28)
 #define S5P_DSIM_INTSRC		(0x2c)	/* Interrupt source
 register */
-#define S5P_DSIM_INTMSK		(0x30)	/* Interrupt mask register
-*/
-#define S5P_DSIM_PKTHDR		(0x34)	/* Packet Header FIFO
-register */
+#define S5P_DSIM_INTMSK		(0x30)	/* Interrupt mask register*/
+
+#define S5P_DSIM_PKTHDR		(0x34)	/* Packet Header FIFOregister */
+
 #define S5P_DSIM_PAYLOAD	(0x38)	/* Payload FIFO register */
 #define S5P_DSIM_RXFIFO		(0x3c)	/* Read FIFO register */
 #define S5P_DSIM_FIFOTHLD	(0x40)	/* FIFO threshold level register */
-#define S5P_DSIM_FIFOCTRL	(0x44)	/* FIFO status and control register
-*/
+#define S5P_DSIM_FIFOCTRL	(0x44)	/* FIFO status and control register */
+#define DSIM_FULL_PH_SFR	(1 << 23)	/* SFR packet header FIFO full */
+#define DSIM_FULL_PL_SFR	(1 << 21)	/* SFR payload FIFO full */
+#define DSIM_INIT_SFR		(1 << 3)	/* SFR FIFO write point initialize */
 
-/* FIFO memory AC characteristic register */
-#define S5P_DSIM_PLLCTRL	(0x4c)	/* PLL control register */
-#define S5P_DSIM_PLLTMR		(0x50)	/* PLL timer register */
-#define S5P_DSIM_PHYACCHR	(0x54)	/* D-PHY AC characteristic register
-*/
-#define S5P_DSIM_PHYACCHR1	(0x58)	/* D-PHY AC characteristic
-register1 */
+/* PLL ctrl register */
+#define S5P_DSIM_PLLCTRL	(0x4c)  /* PLL control register */
+/* PLL timer register */
+#if defined(CONFIG_SOC_EXYNOS5250) ||	\
+defined(CONFIG_SOC_EXYNOS3250) ||	\
+defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS3472)
+#define S5P_DSIM_PLLTMR		(0x50)
+#else
+#define S5P_DSIM_PLLTMR		(0x58)
+#endif
+
+#define S5P_DSIM_PLLCTRL1	(0x50)  /* PLL timer register 1 */
+#define S5P_DSIM_PLLCTRL2	(0x54)  /* PLL timer register 2 */
+
+/* PHY ctrl register */
+/* Only used in EXYNOS5250 */
+#define S5P_DSIM_PHYACCHR	(0x54)	/* D-PHY AC characteristic register */
+#define S5P_DSIM_PHYACCHR1	(0x58)	/* D-PHY AC characteristic register1 */
+#define S5P_DSIM_PHYCTRL	(0x5C)  /* D-PHY Master & Slave Analog block characteristics control register (B_DPHYCTL) */
+#define S5P_DSIM_PHYCTRL1	(0x60)  /* D-PHY Master & Slave Analog block characteristics control register (M_DPHYCTL) */
+#define S5P_DSIM_PHYTIMING	(0x64)  /* D-PHY Master global operating timing register */
+#define S5P_DSIM_PHYTIMING1	(0x68)  /* D-PHY Master global operating timing register */
+#define S5P_DSIM_PHYTIMING2	(0x6C)  /* D-PHY Master global operating timing register */
+
+/* Version register */
+#define S5P_DSIM_VERSION	(0x70)  /* Specifies the DSIM version information */
+
+#define S5P_DSIM_MULTI_PKT	(0xA4)  /* Packet go */
 
 /* DSIM_STATUS */
 #define DSIM_STOP_STATE_DAT(x)	(((x) & 0xf) << 0)
+#define DSIM_ULPS_DAT(x)	(((x) & 0xf) << 4)
 #define DSIM_STOP_STATE_CLK	(1 << 8)
+#define DSIM_ULPS_CLK		(1 << 9)
 #define DSIM_TX_READY_HS_CLK	(1 << 10)
 
 /* DSIM_SWRST */
@@ -83,11 +107,22 @@ register1 */
 #define DSIM_HFP_MODE_SHIFT		(22)
 #define DSIM_HSE_MODE_SHIFT		(23)
 #define DSIM_AUTO_MODE_SHIFT		(24)
+#define DSIM_CLKLANE_SHIFT		(30)
 #define DSIM_LANE_ENx(x)		(((x) & 0x1f) << 0)
 
 #define DSIM_NUM_OF_DATA_LANE(x)	((x) << DSIM_NUM_OF_DATALANE_SHIFT)
 
+#if defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS5260)
+#define DSIM_CLKLANE_ENABLE		(1)
+#else
+#define DSIM_CLKLANE_ENABLE		(0)	/* some of exynos are 30th is reserved bit */
+#endif
+
 /* S5P_DSIM_ESCMODE */
+#define DSIM_TX_ULPS_CLK_EXIT		(1 << 0)
+#define DSIM_TX_ULPS_CLK		(1 << 1)
+#define DSIM_TX_ULPS_DATA_EXIT		(1 << 2)
+#define DSIM_TX_ULPS_DATA		(1 << 3)
 #define DSIM_TX_LPDT_SHIFT		(6)
 #define DSIM_CMD_LPDT_SHIFT		(7)
 #define DSIM_TX_LPDT_LP			(1 << DSIM_TX_LPDT_SHIFT)
@@ -98,7 +133,7 @@ register1 */
 /* S5P_DSIM_MDRESOL */
 #define DSIM_MAIN_STAND_BY		(1 << 31)
 #define DSIM_MAIN_VRESOL(x)		(((x) & 0x7ff) << 16)
-#define DSIM_MAIN_HRESOL(x)		(((x) & 0X7ff) << 0)
+#define DSIM_MAIN_HRESOL(x)		(((x) & 0x7ff) << 0)
 
 /* S5P_DSIM_MVPORCH */
 #define DSIM_CMD_ALLOW_SHIFT		(28)
@@ -132,6 +167,7 @@ register1 */
 #define INTSRC_FRAME_DONE		(1 << 24)
 #define INTSRC_PLL_STABLE		(1 << 31)
 #define INTSRC_SFR_FIFO_EMPTY		(1 << 29)
+#define INTSRC_PH_FIFO_EMPTY		(1 << 28)
 
 /* S5P_DSIM_INTMSK */
 #define INTMSK_FRAME_DONE		(1 << 24)
@@ -145,5 +181,38 @@ register1 */
 /* S5P_DSIM_PLLCTRL */
 #define DSIM_PLL_EN_SHIFT		(23)
 #define DSIM_FREQ_BAND_SHIFT		(24)
+
+#if defined(CONFIG_SOC_EXYNOS5250) ||	\
+defined(CONFIG_SOC_EXYNOS3250) ||	\
+defined(CONFIG_SOC_EXYNOS3470) || defined(CONFIG_SOC_EXYNOS3472) ||	\
+defined(CONFIG_SOC_EXYNOS4210) || defined(CONFIG_SOC_EXYNOS4212) || defined(CONFIG_SOC_EXYNOS4412)
+#define dphy_support_upto_1GHz()	1
+#else
+#define dphy_support_upto_1GHz()	0
+#endif
+
+#if defined(CONFIG_SOC_EXYNOS3250)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS3470)
+#define DPHY_PLL_STABLE_TIME		32000
+#elif defined(CONFIG_SOC_EXYNOS3472)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS4415)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5260)
+#define DPHY_PLL_STABLE_TIME		22200
+#elif defined(CONFIG_SOC_EXYNOS5410)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5420)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5422)
+#define DPHY_PLL_STABLE_TIME		20000
+#elif defined(CONFIG_SOC_EXYNOS5430)
+#define DPHY_PLL_STABLE_TIME		22200
+#elif defined(CONFIG_SOC_EXYNOS5433)
+#define DPHY_PLL_STABLE_TIME		22200
+#else
+#define DPHY_PLL_STABLE_TIME		32000
+#endif
 
 #endif /* _REGS_MIPIDSIM_H */

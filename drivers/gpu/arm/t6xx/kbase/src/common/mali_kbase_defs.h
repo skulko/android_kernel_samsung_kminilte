@@ -46,7 +46,7 @@
 /** Enable SW tracing when set */
 #ifdef CONFIG_MALI_T6XX_ENABLE_TRACE
 #define KBASE_TRACE_ENABLE 1
-#endif
+#endif /* CONFIG_MALI_T6XX_ENABLE_TRACE */
 
 #ifndef KBASE_TRACE_ENABLE
 #ifdef CONFIG_MALI_DEBUG
@@ -145,8 +145,12 @@ typedef struct kbase_device kbase_device;
 
 #define KBASE_LOCK_REGION_MAX_SIZE (63)
 #define KBASE_LOCK_REGION_MIN_SIZE (11)
-
-#define KBASE_TRACE_SIZE_LOG2 8	/* 256 entries */
+/* MALI_SEC */
+#ifdef CONFIG_MALI_EXYNOS_TRACE
+#define KBASE_TRACE_SIZE_LOG2 10	/* 1024 entries */
+#else
+#define KBASE_TRACE_SIZE_LOG2 8		/* 256 entries */
+#endif
 #define KBASE_TRACE_SIZE (1 << KBASE_TRACE_SIZE_LOG2)
 #define KBASE_TRACE_MASK ((1 << KBASE_TRACE_SIZE_LOG2)-1)
 
@@ -206,7 +210,6 @@ typedef enum {
 #define KBASE_KATOM_FLAG_BEEN_SOFT_STOPPPED (1<<1)
 /** Atom has been previously retried to execute */
 #define KBASE_KATOM_FLAGS_RERUN (1<<2)
-#define KBASE_KATOM_FLAGS_JOBCHAIN (1<<3)
 
 typedef struct kbase_jd_atom kbase_jd_atom;
 
@@ -236,6 +239,10 @@ struct kbase_jd_atom {
 #ifdef CONFIG_SYNC
 	struct sync_fence *fence;
 	struct sync_fence_waiter sync_waiter;
+#ifdef SLSI_INTEGRATION
+	struct mutex fence_mt;
+	struct timer_list fence_timer;
+#endif
 #endif				/* CONFIG_SYNC */
 
 	/* Note: refer to kbasep_js_atom_retained_state, which will take a copy of some of the following members */
@@ -331,7 +338,6 @@ typedef struct kbase_jm_slot {
 
 	u8 submitted_head;
 	u8 submitted_nr;
-	u8 job_chain_flag;
 
 } kbase_jm_slot;
 
@@ -456,7 +462,11 @@ typedef struct kbase_trace {
 	u64 atom_udata[2];
 	u64 gpu_addr;
 	u32 info_val;
+#ifdef CONFIG_MALI_EXYNOS_TRACE
+	kbase_trace_code code;
+#else
 	u8 code;
+#endif
 	u8 jobslot;
 	u8 refcount;
 	u8 flags;
@@ -570,8 +580,6 @@ struct kbase_device {
 
 	/** List of SW workarounds for HW issues */
 	unsigned long hw_issues_mask[(BASE_HW_ISSUE_END + BITS_PER_LONG - 1) / BITS_PER_LONG];
-	/** List of features available */
-	unsigned long hw_features_mask[(BASE_HW_FEATURE_END + BITS_PER_LONG - 1) / BITS_PER_LONG];
 
 	/* Cached present bitmaps - these are the same as the corresponding hardware registers */
 	u64 shader_present_bitmap;
@@ -659,11 +667,22 @@ struct kbase_device {
 
 	const kbase_attribute *config_attributes;
 
+	/* >> BASE_HW_ISSUE_8401 >> */
+#define KBASE_8401_WORKAROUND_COMPUTEJOB_COUNT 3
+	kbase_context *workaround_kctx;
+	void *workaround_compute_job_va[KBASE_8401_WORKAROUND_COMPUTEJOB_COUNT];
+	phys_addr_t workaround_compute_job_pa[KBASE_8401_WORKAROUND_COMPUTEJOB_COUNT];
+	/* << BASE_HW_ISSUE_8401 << */
+
 #if KBASE_TRACE_ENABLE != 0
 	spinlock_t              trace_lock;
 	u16                     trace_first_out;
 	u16                     trace_next_in;
+#ifdef CONFIG_MALI_EXYNOS_TRACE
+	kbase_trace            trace_rbuf[KBASE_TRACE_SIZE];
+#else
 	kbase_trace            *trace_rbuf;
+#endif
 #endif
 
 #if MALI_CUSTOMER_RELEASE == 0
@@ -755,7 +774,6 @@ struct kbase_context {
 	 * All other flags must be added there */
 	spinlock_t         mm_update_lock;
 	struct mm_struct * process_mm;
-	pid_t              pid;
 
 #ifdef CONFIG_MALI_TRACE_TIMELINE
 	kbase_trace_kctx_timeline timeline;

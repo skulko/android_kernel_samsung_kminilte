@@ -125,10 +125,11 @@ obj-y				+= ieee802154/
 obj-y				+= clk/
 
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
-obj-$(CONFIG_NFC_DEVICES)		+= nfc/
+obj-$(CONFIG_NFC)		+= nfc/
 obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 obj-$(CONFIG_REMOTEPROC)	+= remoteproc/
 obj-$(CONFIG_RPMSG)		+= rpmsg/
+obj-$(CONFIG_BATTERY_SAMSUNG)	+= battery/
 
 # Virtualization drivers
 obj-$(CONFIG_VIRT_DRIVERS)	+= virt/
@@ -137,3 +138,10 @@ obj-$(CONFIG_HYPERV)		+= hv/
 obj-$(CONFIG_PM_DEVFREQ)	+= devfreq/
 
 obj-$(CONFIG_MOBICORE_DRIVER)	+= gud/
+
+obj-y		+= motor/
+
+obj-y	+= sensors/
+obj-$(CONFIG_SENSORS_FINGERPRINT)	+= fingerprint/
+obj-$(CONFIG_IR_REMOCON)	+= irda/
+obj-$(CONFIG_ICE4_FPGA)		+= ice4_fpga/

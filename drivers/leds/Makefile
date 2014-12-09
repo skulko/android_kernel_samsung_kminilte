@@ -45,7 +45,12 @@ obj-$(CONFIG_LEDS_NETXBIG)		+= leds-netxbig.o
 obj-$(CONFIG_LEDS_ASIC3)		+= leds-asic3.o
 obj-$(CONFIG_LEDS_RENESAS_TPU)		+= leds-renesas-tpu.o
 obj-$(CONFIG_LEDS_MAX8997)		+= leds-max8997.o
-obj-$(CONFIG_LEDS_AS3668)		+= leds-as3668.o
+obj-$(CONFIG_LEDS_MAX77803)		+= leds-max77803.o
+obj-$(CONFIG_LEDS_AN30259A)		+= leds-an30259a.o
+obj-$(CONFIG_LEDS_KTD2026)		+= leds-ktd2026.o
+obj-$(CONFIG_FLASHLIGHT)		+= flashlight.o
+obj-$(CONFIG_RT_FLASH_LED)		+= rtfled.o
+obj-$(CONFIG_FLED_RT5033)		+= rt5033_fled.o
 
 # LED SPI Drivers
 obj-$(CONFIG_LEDS_DAC124S085)		+= leds-dac124s085.o

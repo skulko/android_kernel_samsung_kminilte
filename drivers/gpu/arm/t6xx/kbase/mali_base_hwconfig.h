@@ -26,24 +26,6 @@
 #include <malisw/mali_malisw.h>
 
 /**
- * List of all hw features.
- *
- */
-typedef enum base_hw_feature {
-	/* Allow soft/hard stopping of job depending on job chain flag */
-	BASE_HW_FEATURE_JOBCHAIN_DISAMBIGUATION,
-
-	/* Allow writes to SHADER_PWRON and TILER_PWRON registers while these cores are currently transitioning to OFF power state */
-	BASE_HW_FEATURE_PWRON_DURING_PWROFF_TRANS,
-
-	/* The BASE_HW_FEATURE_END value must be the last feature listed in this enumeration
-	 * and must be the last value in each array that contains the list of features
-	 * for a particular HW version.
-	 */
-	BASE_HW_FEATURE_END
-} base_hw_feature;
-
-/**
  * List of all workarounds.
  *
  */
@@ -192,9 +174,6 @@ typedef enum base_hw_issue {
 	/* Soft-stopping fragment jobs might fail with TILE_RANGE_FAULT */
 	BASE_HW_ISSUE_10817,
 
-	/* Fragment frontend heuristic bias to force early-z required */
-	BASE_HW_ISSUE_10821,
-
 	/* Intermittent missing interrupt on job completion */
 	BASE_HW_ISSUE_10883,
 
@@ -203,17 +182,6 @@ typedef enum base_hw_issue {
 
 	/* Soft-stopped fragment shader job can restart with out-of-bound restart index  */
 	BASE_HW_ISSUE_10969,
-
-	/* T76X hw issues */
-
-	/* Forward pixel kill doesn't work with MRT */
-	BASE_HW_ISSUE_T76X_2121,
-
-	/* CRC not working with MFBD */
-	BASE_HW_ISSUE_T76X_2315,
-
-	/* Preloading a buffer in multisample mode is not supported */
-	BASE_HW_ISSUE_T76X_2300,
 
 	/* The BASE_HW_ISSUE_END value must be the last issue listed in this enumeration
 	 * and must be the last value in each array that contains the list of workarounds
@@ -379,7 +347,6 @@ static const base_hw_issue base_hw_issues_t62x_r0p0[] = {
 	BASE_HW_ISSUE_10682,
 	BASE_HW_ISSUE_10684,
 	BASE_HW_ISSUE_10817,
-	BASE_HW_ISSUE_10821,
 	BASE_HW_ISSUE_10883,
 	BASE_HW_ISSUE_10931,
 	/* List of hardware issues must end with BASE_HW_ISSUE_END */
@@ -403,7 +370,6 @@ static const base_hw_issue base_hw_issues_t67x_r0p0[] = {
 	BASE_HW_ISSUE_10682,
 	BASE_HW_ISSUE_10684,
 	BASE_HW_ISSUE_10817,
-	BASE_HW_ISSUE_10821,
 	BASE_HW_ISSUE_10883,
 	BASE_HW_ISSUE_10931,
 	/* List of hardware issues must end with BASE_HW_ISSUE_END */
@@ -427,7 +393,6 @@ static const base_hw_issue base_hw_issues_t62x_r0p1[] = {
 	BASE_HW_ISSUE_10682,
 	BASE_HW_ISSUE_10684,
 	BASE_HW_ISSUE_10817,
-	BASE_HW_ISSUE_10821,
 	BASE_HW_ISSUE_10883,
 	BASE_HW_ISSUE_10931,
 	/* List of hardware issues must end with BASE_HW_ISSUE_END */
@@ -451,7 +416,6 @@ static const base_hw_issue base_hw_issues_t67x_r0p1[] = {
 	BASE_HW_ISSUE_10682,
 	BASE_HW_ISSUE_10684,
 	BASE_HW_ISSUE_10817,
-	BASE_HW_ISSUE_10821,
 	BASE_HW_ISSUE_10883,
 	BASE_HW_ISSUE_10931,
 	/* List of hardware issues must end with BASE_HW_ISSUE_END */
@@ -467,7 +431,6 @@ static const base_hw_issue base_hw_issues_t62x_r1p0[] = {
 	BASE_HW_ISSUE_10472,
 	BASE_HW_ISSUE_10649,
 	BASE_HW_ISSUE_10684,
-	BASE_HW_ISSUE_10821,
 	BASE_HW_ISSUE_10883,
 	BASE_HW_ISSUE_10931,
 	/* List of hardware issues must end with BASE_HW_ISSUE_END */
@@ -483,24 +446,19 @@ static const base_hw_issue base_hw_issues_t67x_r1p0[] = {
 	BASE_HW_ISSUE_10472,
 	BASE_HW_ISSUE_10649,
 	BASE_HW_ISSUE_10684,
-	BASE_HW_ISSUE_10821,
 	BASE_HW_ISSUE_10883,
 	BASE_HW_ISSUE_10931,
 	/* List of hardware issues must end with BASE_HW_ISSUE_END */
 	BASE_HW_ISSUE_END
 };
 
-/* Model configuration
- */
-static const base_hw_issue base_hw_issues_model_t6xx[] =
-{
-	BASE_HW_ISSUE_5736,
-	BASE_HW_ISSUE_6402, /* NOTE: Fix is present in model r125162 but is not enabled until RTL is fixed */
-	BASE_HW_ISSUE_7393,
-	BASE_HW_ISSUE_9275,
+/* Mali T75x r0p0 */
+static const base_hw_issue base_hw_issues_t75x_r0p0[] = {
+	BASE_HW_ISSUE_6402,
+	BASE_HW_ISSUE_8803,
 	BASE_HW_ISSUE_9435,
-	BASE_HW_ISSUE_10472,
-	BASE_HW_ISSUE_10632,
+	BASE_HW_ISSUE_10649,
+	BASE_HW_ISSUE_10883,
 	BASE_HW_ISSUE_10931,
 	/* List of hardware issues must end with BASE_HW_ISSUE_END */
 	BASE_HW_ISSUE_END

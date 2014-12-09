@@ -1,6 +1,6 @@
 /* linux/drivers/media/video/exynos/jpeg/jpeg_dev.h
   *
-  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+  * Copyright (c) 2012~2013 Samsung Electronics Co., Ltd.
   * http://www.samsung.com/
   *
   * Header file for Samsung Jpeg v2.x Interface driver
@@ -16,6 +16,8 @@
 #define JPEG_NAME		"s5p-jpeg"
 #define JPEG_ENC_NAME		"video12"
 #define JPEG_DEC_NAME		"video11"
+#define JPEG_ENC_NUM		12
+#define JPEG_DEC_NUM		11
 
 #if defined(CONFIG_BUSFREQ_OPP)
 #define BUSFREQ_400MHZ	400266

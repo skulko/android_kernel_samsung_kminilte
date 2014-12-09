@@ -151,6 +151,7 @@
 								a frame */
 #define S5P_FIMV_SI_DISPLAY_STATUS	0x201c /* status of decoded picture */
 #define S5P_FIMV_SI_FRAME_TYPE		0x2020 /* frame type such as skip/I/P/B */
+#define S5P_FIMV_SI_DECODED_Y_ADR      0x2024 /* luma address of decoded pic */
 #define S5P_FIMV_SI_DECODED_STATUS	0x202c /* status of decoded picture */
 #define S5P_FIMV_DEC_CRC_GEN_MASK	0x3
 #define S5P_FIMV_DEC_CRC_GEN_SHIFT	4
@@ -214,7 +215,8 @@
 #define S5P_FIMV_DEC_VERT_NB_MV_SIZE		(16 * 1024)
 #define S5P_FIMV_DEC_NB_DCAC_SIZE		(16 * 1024)
 #define S5P_FIMV_DEC_UPNB_MV_SIZE		(68 * 1024)
-#define S5P_FIMV_DEC_SUB_ANCHOR_MV_SIZE		(136 * 1024)
+#define S5P_FIMV_DEC_SUB_ANCHOR_MV_SIZE_VC1	(136 * 1024)
+#define S5P_FIMV_DEC_SUB_ANCHOR_MV_SIZE		(240 * 1024)
 #define S5P_FIMV_DEC_OVERLAP_TRANSFORM_SIZE     (32 * 1024)
 #define S5P_FIMV_DEC_VC1_BITPLANE_SIZE		(2 * 1024)
 #define S5P_FIMV_DEC_STX_PARSER_SIZE		(68 * 1024)
@@ -225,9 +227,10 @@
 #define S5P_FIMV_NV12M_LVALIGN			16
 #define S5P_FIMV_NV12M_CVALIGN			8
 #define S5P_FIMV_NV12MT_HALIGN			128
-#define S5P_FIMV_NV12MT_VALIGN			32
+#define S5P_FIMV_NV12MT_VALIGN			64
 #define S5P_FIMV_NV12M_SALIGN			2048
 #define S5P_FIMV_NV12MT_SALIGN			8192
+#define S5P_FIMV_CPB_ALIGN			65536
 
 /* Sizes of buffers required for encoding */
 #define S5P_FIMV_ENC_UPMV_SIZE			(0x10000)
@@ -270,6 +273,7 @@
 #define S5P_FIMV_ENC_CIR_CTRL		0xc518 /* number of intra refresh MB */
 #define S5P_FIMV_ENC_MAP_FOR_CUR	0xc51c /* linear or 64x32 tiled mode */
 #define S5P_FIMV_ENC_PADDING_CTRL	0xc520 /* padding control */
+#define S5P_FIMV_ENC_NV21_SEL		0xc548 /* chroma interleaving order */
 
 #define S5P_FIMV_ENC_RC_CONFIG		0xc5a0 /* RC config */
 #define S5P_FIMV_ENC_RC_BIT_RATE	0xc5a8 /* bit rate */
@@ -290,6 +294,7 @@
 #define S5P_FIMV_ENC_MPEG4_QUART_PXL	0xe008 /* qpel interpolation ctrl */
 
 /* Additional */
+#define S5P_FIMV_DYNAMIC_DPB_SET_ENABLE	0x2070 /* DPB Config Control Register2 */
 #define S5P_FIMV_SI_CH0_DPB_CONF_CTRL   0x2068 /* DPB Config Control Register */
 #define S5P_FIMV_SLICE_INT_MASK		1
 #define S5P_FIMV_SLICE_INT_SHIFT	31
@@ -325,6 +330,7 @@
 #define S5P_FIMV_CH_LAST_FRAME		3
 #define S5P_FIMV_CH_INIT_BUFS		4
 #define S5P_FIMV_CH_FRAME_START_REALLOC	5
+#define S5P_FIMV_CH_FRAME_BATCH_START	6
 
 #define S5P_FIMV_CH_MASK		7
 #define S5P_FIMV_CH_SHIFT		16
@@ -337,11 +343,12 @@
 #define S5P_FIMV_H2R_CMD_FLUSH		4
 #define S5P_FIMV_H2R_CMD_SLEEP		5
 #define S5P_FIMV_H2R_CMD_WAKEUP		6
+#define S5P_FIMV_H2R_CMD_CONTINUE_ENC	7
+#define S5P_FIMV_H2R_CMD_ABORT_ENC	8
 
 #define S5P_FIMV_R2H_CMD_EMPTY			0
 #define S5P_FIMV_R2H_CMD_OPEN_INSTANCE_RET	1
 #define S5P_FIMV_R2H_CMD_CLOSE_INSTANCE_RET	2
-#define S5P_FIMV_R2H_CMD_RSV_RET		3
 #define S5P_FIMV_R2H_CMD_SEQ_DONE_RET		4
 #define S5P_FIMV_R2H_CMD_FRAME_DONE_RET		5
 #define S5P_FIMV_R2H_CMD_SLICE_DONE_RET		6
@@ -351,9 +358,29 @@
 #define S5P_FIMV_R2H_CMD_SLEEP_RET		10
 #define S5P_FIMV_R2H_CMD_WAKEUP_RET		11
 #define S5P_FIMV_R2H_CMD_FLUSH_RET		12
+#define S5P_FIMV_R2H_CMD_ABORT_RET		13
+#define S5P_FIMV_R2H_CMD_NAL_ABORT_RET		S5P_FIMV_R2H_CMD_ABORT_RET
+#define S5P_FIMV_R2H_CMD_BATCH_ENC_RET		14
 #define S5P_FIMV_R2H_CMD_INIT_BUFFERS_RET	15
 #define S5P_FIMV_R2H_CMD_EDFU_INIT_RET		16
 #define S5P_FIMV_R2H_CMD_ERR_RET		32
+
+#define R2H_BIT(x)     (((x) > 0) ? (1 << ((x) - 1)) : 0)
+static inline unsigned int r2h_bits(int cmd)
+{
+	unsigned int mask = R2H_BIT(cmd);
+
+	if (cmd == S5P_FIMV_R2H_CMD_FRAME_DONE_RET) {
+		mask |= (R2H_BIT(S5P_FIMV_R2H_CMD_SLICE_DONE_RET) |
+			 R2H_BIT(S5P_FIMV_R2H_CMD_ENC_COMPLETE_RET) |
+			 R2H_BIT(S5P_FIMV_R2H_CMD_EDFU_INIT_RET));
+	}
+
+	if (cmd == S5P_FIMV_R2H_CMD_CLOSE_INSTANCE_RET)
+		mask |= R2H_BIT(S5P_FIMV_R2H_CMD_ABORT_RET);
+
+	return (mask |= R2H_BIT(S5P_FIMV_R2H_CMD_ERR_RET));
+}
 
 /* Dummy definition for MFCv6 compatibilty */
 #define S5P_FIMV_CODEC_H264_MVC_DEC		-1
@@ -362,6 +389,7 @@
 #define S5P_FIMV_RISC_ON			-1
 #define S5P_FIMV_RISC_BASE_ADDRESS		-1
 #define S5P_FIMV_CODEC_VP8_DEC			-1
+#define S5P_FIMV_CODEC_VP8_ENC			-1
 #define S5P_FIMV_REG_CLEAR_BEGIN		0
 #define S5P_FIMV_REG_CLEAR_COUNT		0
 #define S5P_FIMV_CRC_DISP_LUMA0			S5P_FIMV_CRC_LUMA0
@@ -373,9 +401,12 @@
 #define S5P_FIMV_D_NUM_MV			-1
 #define S5P_FIMV_MFC_VERSION			0
 #define S5P_FIMV_ERR_FRAME_CONCEAL		-1
+#define S5P_FIMV_R2H_CMD_DPB_FLUSH_RET		-2
+#define S5P_FIMV_R2H_CMD_COMPLETE_SEQ_RET	-3
 
 /* Error handling defines */
 #define S5P_FIMV_ERR_WARNINGS_START		145
+#define S5P_FIMV_ERR_WARNINGS_END		182
 #define S5P_FIMV_ERR_DEC_MASK			0xFFFF
 #define S5P_FIMV_ERR_DEC_SHIFT			0
 #define S5P_FIMV_ERR_DSPL_MASK			0xFFFF0000
@@ -435,8 +466,10 @@
 #define	S5P_FIMV_FRAME_INSERTION		S5P_FIMV_ENC_SI_CH0_FRAME_INS
 
 #define S5P_FIMV_PARAM_CHANGE_FLAG		S5P_FIMV_SHARED_PARAM_CHANGE /* flag */
+#define S5P_FIMV_PARAM_CHANGE_FLAG_SHIFT	5
 #define S5P_FIMV_NEW_I_PERIOD			S5P_FIMV_SHARED_NEW_I_PERIOD
 #define S5P_FIMV_NEW_RC_FRAME_RATE		S5P_FIMV_SHARED_NEW_RC_FRAME_RATE
 #define S5P_FIMV_NEW_RC_BIT_RATE		S5P_FIMV_SHARED_NEW_RC_BIT_RATE
+#define S5P_FIMV_NEW_RC_QP_BOUND		S5P_FIMV_ENC_RC_QBOUND
 
 #endif /* _REGS_FIMV_V5_H */

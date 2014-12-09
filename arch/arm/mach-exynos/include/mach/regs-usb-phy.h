@@ -13,6 +13,9 @@
 
 #define EXYNOS4_HSOTG_PHYREG(x)		((x) + S3C_VA_USB_HSPHY)
 
+#include "regs-usb-phy-4210.h"
+#include "regs-usb-phy-4212.h"
+
 #define EXYNOS4_PHYPWR			EXYNOS4_HSOTG_PHYREG(0x00)
 #define PHY1_HSIC_NORMAL_MASK		(0xf << 9)
 #define PHY1_HSIC1_SLEEP		(1 << 12)
@@ -32,6 +35,7 @@
 #define PHY0_FORCE_SUSPEND		(1 << 0)
 
 #define EXYNOS4_PHYCLK			EXYNOS4_HSOTG_PHYREG(0x04)
+#define REF_CLKSEL			(0x2 << 8)
 #define PHY1_COMMON_ON_N		(1 << 7)
 #define PHY0_COMMON_ON_N		(1 << 4)
 #define PHY0_ID_PULLUP			(1 << 2)
@@ -116,6 +120,7 @@
 #define EHCICTRL_ENAINCR16			(0x1 << 26)
 
 #define EXYNOS5_PHY_HOST_OHCICTRL		EXYNOS4_HSOTG_PHYREG(0x34)
+#define OHCICTRL_SUSPLGCY			(0x1 << 3)
 
 #define EXYNOS5_PHY_OTG_SYS			EXYNOS4_HSOTG_PHYREG(0x38)
 #define OTG_SYS_PHYLINK_SW_RESET		(0x1 << 14)
@@ -132,7 +137,7 @@
 #define OTG_SYS_SIDDQ_UOTG			(0x1 << 1)
 #define OTG_SYS_FORCE_SUSPEND			(0x1 << 0)
 
-#define EXYNOS5_PHY_OTG_TUNE		EXYNOS4_HSOTG_PHYREG(0x40)
+#define EXYNOS5_PHY_OTG_TUNE		EXYNOS4_HSOTG_PHYREG(0x24)
 #define OTG_TUNE_TXRESTUNE(val)		((val&0x3) << 25)
 #define OTG_TUNE_TXRISETUNE(val)		((val&0x3) << 23)
 #define OTG_TUNE_TXPREEMPAMPTUNE(val)		((val&0x3) << 21)

@@ -25,13 +25,8 @@
 
 void kbase_sync_to_memory(phys_addr_t paddr, void *vaddr, size_t sz)
 {
-const u32 PARTIAL_FLUSH_FASTER_SIZE = 2539520;
 #ifdef CONFIG_ARM
-	if(sz < PARTIAL_FLUSH_FASTER_SIZE)
-		__cpuc_flush_dcache_area(vaddr, sz);	
-	else
-		flush_cache_all();
-
+	__cpuc_flush_dcache_area(vaddr, sz);
 	outer_flush_range(paddr, paddr + sz);
 #elif defined(CONFIG_X86)
 	struct scatterlist scl = { 0, };
@@ -45,13 +40,8 @@ const u32 PARTIAL_FLUSH_FASTER_SIZE = 2539520;
 
 void kbase_sync_to_cpu(phys_addr_t paddr, void *vaddr, size_t sz)
 {
-const u32 PARTIAL_FLUSH_FASTER_SIZE = 2539520;
 #ifdef CONFIG_ARM
-	if(sz < PARTIAL_FLUSH_FASTER_SIZE)
-		__cpuc_flush_dcache_area(vaddr, sz);	
-	else
-		flush_cache_all();
-	
+	__cpuc_flush_dcache_area(vaddr, sz);
 	outer_flush_range(paddr, paddr + sz);
 #elif defined(CONFIG_X86)
 	struct scatterlist scl = { 0, };

@@ -27,7 +27,6 @@
  */
 struct s3c_fb_pd_win {
 	struct fb_videomode	win_mode;
-
 	unsigned short		default_bpp;
 	unsigned short		max_bpp;
 	unsigned short		virtual_x;
@@ -56,14 +55,23 @@ struct s3c_fb_pd_win {
 struct s3c_fb_platdata {
 	void	(*setup_gpio)(void);
 	void	(*backlight_off)(void);
+	void	(*backlight_ctrl)(unsigned int enable);
 	void	(*lcd_off)(void);
+	void	(*dsim_hs_ctrl)(struct device *dsim, unsigned int enable);
+	int             (*dsim_on)(struct device *dsim);
+	int             (*dsim_off)(struct device *dsim);
+	int             (*dsim_displayon)(struct device *dsim);
 
 	struct s3c_fb_pd_win	*win[S3C_FB_MAX_WIN];
 
 	u32			 default_win;
-
 	u32			 vidcon0;
 	u32			 vidcon1;
+	int			 ip_version;
+	struct device		 *dsim0_device;
+	struct s5p_platform_mipi_dsim *dsim_pd;
+	u32			 bootlogo;
+	int			(*clock_init)(void);
 };
 
 /**
@@ -139,6 +147,15 @@ extern void s5p64x0_fb_gpio_setup_24bpp(void);
  * @clk_rate: clock rate for parent clock
  */
 extern int __init exynos5_fimd1_setup_clock(struct device *dev, const char *bus_clk,
+					const char *parent, unsigned long clk_rate);
+
+/**
+ * exynos4_fimd_setup_clock() = Exynos4 setup function for parent clock.
+ * @dev: device pointer
+ * @parent: parent clock used for LCD pixel clock
+ * @clk_rate: clock rate for parent clock
+ */
+extern int __init exynos4_fimd_setup_clock(struct device *dev, const char *bus_clk,
 					const char *parent, unsigned long clk_rate);
 
 #endif /* __PLAT_S3C_FB_H */

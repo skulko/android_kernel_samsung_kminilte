@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2013 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT 2010-2013 ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -12,8 +12,6 @@
  * Boston, MA  02110-1301, USA.
  *
  */
-
-
 
 /**
  * @file mali_kbase_pm_ca_random.c
@@ -30,11 +28,6 @@
 #include <kbase/src/common/mali_kbase_pm_ca_random_test.h>
 #include <linux/random.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
-/* random32 was renamed to prandom_u32 in 3.8 */
-#define prandom_u32 random32
-#endif
-
 STATIC void random_timer_callback(unsigned long cb)
 {
 	struct kbase_device *kbdev = (struct kbase_device *) cb;
@@ -45,7 +38,7 @@ STATIC void random_timer_callback(unsigned long cb)
 
 	/* Select new core mask, ensuring that core group 0 is not powered off */
 	do {
-		data->cores_desired = prandom_u32() & kbdev->shader_present_bitmap;
+		data->cores_desired = random32() & kbdev->shader_present_bitmap;
 	} while (!(data->cores_desired & kbdev->gpu_props.props.coherency_info.group[0].core_mask));
 
 	/* Disable any cores that are now unwanted */

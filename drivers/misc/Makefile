@@ -25,10 +25,8 @@ obj-$(CONFIG_KGDB_TESTS)	+= kgdbts.o
 obj-$(CONFIG_SGI_XP)		+= sgi-xp/
 obj-$(CONFIG_SGI_GRU)		+= sgi-gru/
 obj-$(CONFIG_CS5535_MFGPT)	+= cs5535-mfgpt.o
-obj-$(CONFIG_HAPTIC_ISA1200)	+= haptic_isa1200.o
 obj-$(CONFIG_HP_ILO)		+= hpilo.o
 obj-$(CONFIG_APDS9802ALS)	+= apds9802als.o
-obj-$(CONFIG_SAMSUNG_JACK)	+= sec_jack.o
 obj-$(CONFIG_ISL29003)		+= isl29003.o
 obj-$(CONFIG_ISL29020)		+= isl29020.o
 obj-$(CONFIG_SENSORS_TSL2550)	+= tsl2550.o
@@ -50,9 +48,21 @@ obj-$(CONFIG_AB8500_PWM)	+= ab8500-pwm.o
 obj-y				+= lis3lv02d/
 obj-y				+= carma/
 obj-$(CONFIG_USB_SWITCH_FSA9480) += fsa9480.o
+obj-$(CONFIG_MUIC_TSU6721)	+= tsu6721-muic.o
+obj-$(CONFIG_MUIC_SM5502)   += sm5502-muic.o
 obj-$(CONFIG_ALTERA_STAPL)	+=altera-stapl/
 obj-$(CONFIG_MAX8997_MUIC)	+= max8997-muic.o
 obj-$(CONFIG_WL127X_RFKILL)	+= wl127x-rfkill.o
 obj-$(CONFIG_SENSORS_AK8975)	+= akm8975.o
-obj-$(CONFIG_STMPE811_ADC)	+= stmpe811-adc.o
-obj-$(CONFIG_AUDIENCE_ES305)	+= es305.o
+obj-$(CONFIG_MFD_MAX77803)  += max77803-muic.o
+obj-$(CONFIG_MCU_IPC)		+= mcu_ipc/
+obj-$(CONFIG_SEC_MODEM_V2)	+= modem_v2/
+obj-$(CONFIG_SEC_MODEM_V1)	+= modem_v1/
+obj-$(CONFIG_SEC_MODEM_IF)	+= modem_if/
+
+# Secure OS Mobicore Interface
+obj-$(CONFIG_MOBICORE_DRIVER)  += tzic.o
+
+ifeq ($(TIMA_ENABLED),1)
+obj-$(CONFIG_TIMA_LOG)		+= tima_debug_log.o
+endif

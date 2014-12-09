@@ -29,6 +29,7 @@
 typedef unsigned int __bitwise__ samsung_gpio_pull_t;
 typedef unsigned int __bitwise__ s5p_gpio_drvstr_t;
 typedef unsigned int __bitwise__ s5p_gpio_pd_cfg_t;
+typedef unsigned int __bitwise__ s5p_gpio_data_t;
 typedef unsigned int __bitwise__ s5p_gpio_pd_pull_t;
 
 /* forward declaration if gpio-core.h hasn't been included */
@@ -188,8 +189,13 @@ static inline int s3c_gpio_cfgrange_nopull(unsigned int pin, unsigned int size,
  * configurable on most pins on the S5P series.
  */
 #define S5P_GPIO_DRVSTR_LV1	((__force s5p_gpio_drvstr_t)0x0)
+#ifdef CONFIG_SOC_EXYNOS5260
+#define S5P_GPIO_DRVSTR_LV2     ((__force s5p_gpio_drvstr_t)0x1)
+#define S5P_GPIO_DRVSTR_LV3     ((__force s5p_gpio_drvstr_t)0x2)
+#else
 #define S5P_GPIO_DRVSTR_LV2	((__force s5p_gpio_drvstr_t)0x2)
 #define S5P_GPIO_DRVSTR_LV3	((__force s5p_gpio_drvstr_t)0x1)
+#endif
 #define S5P_GPIO_DRVSTR_LV4	((__force s5p_gpio_drvstr_t)0x3)
 
 /**
@@ -220,6 +226,17 @@ extern int s5p_gpio_set_drvstr(unsigned int pin, s5p_gpio_drvstr_t drvstr);
 #define S5P_GPIO_PD_OUTPUT1	((__force s5p_gpio_pd_cfg_t)0x01)
 #define S5P_GPIO_PD_INPUT	((__force s5p_gpio_pd_cfg_t)0x02)
 #define S5P_GPIO_PD_PREV_STATE	((__force s5p_gpio_pd_cfg_t)0x03)
+
+extern s5p_gpio_data_t s5p_gpio_get_data(unsigned int pin);
+extern int s5p_gpio_set_data(unsigned int pin, s5p_gpio_data_t drvstr);
+
+/* Define values for the power down configuration available for each gpio pin.
+ *
+ * These values control the state of the power down configuration resistors
+ * available on most pins on the S5P series.
+ */
+#define S5P_GPIO_DATA0		((__force s5p_gpio_data_t)0x0)
+#define S5P_GPIO_DATA1		((__force s5p_gpio_data_t)0x1)
 
 /**
  * s5p_gpio_set_pd_cfg() - set the configuration of a gpio power down mode
@@ -303,5 +320,14 @@ extern int s5p_register_gpioint_bank(int chain_irq, int start, int nr_groups);
 #else
 #define s5p_register_gpioint_bank(chain_irq, start, nr_groups) do { } while (0)
 #endif
+
+/**
+ * exynos_set_lpa_pdn() - Help to set GPIO power down register before
+ * entering LPA(Low Power Audio) mode. This mode is implemented as a
+ * kind of cpuidle state(C-state).
+ * In this mode, Normal GPIO cannot sustain configuration and need to
+ * configure power down register.
+ */
+extern void exynos_set_lpa_pdn(unsigned int gpio_end);
 
 #endif /* __PLAT_GPIO_CFG_H */

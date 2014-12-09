@@ -11,6 +11,8 @@
 #ifndef FIMC_LITE_REG_H_
 #define FIMC_LITE_REG_H_
 
+#define FLITE_OVERFLOW_COUNT	300
+
 /* Camera Source size */
 #define FLITE_REG_CISRCSIZE				0x00
 #define FLITE_REG_CISRCSIZE_SIZE_H(x)			((x) << 16)
@@ -22,6 +24,7 @@
 
 /* Global control */
 #define FLITE_REG_CIGCTRL				0x04
+#define FLITE_REG_CIGCTRL_OUT_GSCL_ENABLE		(1 << 30)
 #define FLITE_REG_CIGCTRL_YUV422_1P			(0x1E << 24)
 #define FLITE_REG_CIGCTRL_RAW8				(0x2A << 24)
 #define FLITE_REG_CIGCTRL_RAW10				(0x2B << 24)
@@ -29,6 +32,8 @@
 #define FLITE_REG_CIGCTRL_RAW14				(0x2D << 24)
 /* User defined formats. x = 0...0xF. */
 #define FLITE_REG_CIGCTRL_USER(x)			(0x30 + x - 1)
+#define FLITE_REG_CIGCTRL_OUT_GSCL_DISABLE		(1 << 30)
+#define FLITE_REG_CIGCTRL_OUT_LOCAL_DISABLE		(1 << 22)
 #define FLITE_REG_CIGCTRL_SHADOWMASK_DISABLE		(1 << 21)
 #define FLITE_REG_CIGCTRL_ODMA_DISABLE			(1 << 20)
 #define FLITE_REG_CIGCTRL_SWRST_REQ			(1 << 19)
@@ -64,7 +69,7 @@
 /* Camera Window Offset */
 #define FLITE_REG_CIWDOFST				0x10
 #define FLITE_REG_CIWDOFST_WINOFSEN			(1 << 31)
-#define FLITE_REG_CIWDOFST_CLROVIY			(1 << 31)
+#define FLITE_REG_CIWDOFST_CLROVFIY			(1 << 31)
 #define FLITE_REG_CIWDOFST_WINHOROFST(x)		((x) << 16)
 #define FLITE_REG_CIWDOFST_HOROFF_MASK			(0x1fff << 16)
 #define FLITE_REG_CIWDOFST_CLROVFICB			(1 << 15)
@@ -83,10 +88,10 @@
 #define FLITE_REG_CIODMAFMT_2D_DMA			(0 << 15)
 #define FLITE_REG_CIODMAFMT_PACK12			(1 << 14)
 #define FLITE_REG_CIODMAFMT_NORMAL			(0 << 14)
-#define FLITE_REG_CIODMAFMT_CRYCBY			(0 << 4)
-#define FLITE_REG_CIODMAFMT_CBYCRY			(1 << 4)
-#define FLITE_REG_CIODMAFMT_YCRYCB			(2 << 4)
-#define FLITE_REG_CIODMAFMT_YCBYCR			(3 << 4)
+#define FLITE_REG_CIODMAFMT_YCBYCR			(0 << 4)
+#define FLITE_REG_CIODMAFMT_YCRYCB			(1 << 4)
+#define FLITE_REG_CIODMAFMT_CBYCRY			(2 << 4)
+#define FLITE_REG_CIODMAFMT_CRYCBY			(3 << 4)
 
 /* Camera Output Canvas */
 #define FLITE_REG_CIOCAN				0x20
@@ -97,9 +102,6 @@
 #define FLITE_REG_CIOOFF				0x24
 #define FLITE_REG_CIOOFF_OOFF_V(x)			((x) << 16)
 #define FLITE_REG_CIOOFF_OOFF_H(x)			((x) << 0)
-
-/* Camera Output DMA Address */
-#define FLITE_REG_CIOSA					0x30
 
 /* Camera Status */
 #define FLITE_REG_CISTATUS				0x40
@@ -129,7 +131,18 @@
 
 /* Camera General Purpose */
 #define FLITE_REG_CIGENERAL				0xFC
+#define FLITE_REG_CIGENERAL_CAM_MASK			(0x3 << 0)
 #define FLITE_REG_CIGENERAL_CAM_A			(0 << 0)
 #define FLITE_REG_CIGENERAL_CAM_B			(1 << 0)
+#define FLITE_REG_CIGENERAL_B_SRC_CSIS_B		(0 << 12)
+#define FLITE_REG_CIGENERAL_B_SRC_CSIS_A		(1 << 12)
+
+#define FLITE_REG_CIFCNTSEQ				0x100
+#define FLITE_REG_CIFCNTSEQ_FRMCNT_MASK(x)		(0xFFFFFFFF >> \
+							 (32 - (x)))
+/* Camera Output DMA Address (0~31)*/
+#define FLITE_REG_CIOSA(n)				(n ? \
+							0x1FC + (n * 0x4) : \
+							0x30)
 
 #endif /* FIMC_LITE_REG_H */

@@ -19,11 +19,20 @@
 #include <plat/gpio-cfg.h>
 #include <plat/audio.h>
 #include <plat/cpu.h>
+#include <plat/srp.h>
 
 #include <mach/map.h>
 #include <mach/dma.h>
 #include <mach/irqs.h>
 #include <mach/regs-audss.h>
+
+#ifdef CONFIG_SOC_EXYNOS5260
+#define I2S_MAX_DEV	2
+#define PCM_MAX_DEV	2
+#else
+#define I2S_MAX_DEV	3
+#define PCM_MAX_DEV	3
+#endif
 
 static const char *rclksrc[] = {
 	[0] = "busclk",
@@ -34,6 +43,16 @@ struct exynos_gpio_cfg {
 	unsigned int	addr;
 	unsigned int	num;
 	unsigned int	bit;
+};
+
+struct platform_device exynos_device_audss = {
+       .name = "samsung-audss",
+       .id = 0,
+};
+
+struct platform_device exynos5_device_lpass = {
+       .name = "samsung-lpass",
+       .id = 0,
 };
 
 static int exynos_cfg_i2s_gpio(struct platform_device *pdev)
@@ -47,10 +66,24 @@ static int exynos_cfg_i2s_gpio(struct platform_device *pdev)
 	struct exynos_gpio_cfg exynos5_cfg[3] = {
 				{ EXYNOS5_GPZ(0),  7, S3C_GPIO_SFN(2) },
 				{ EXYNOS5_GPB0(0), 5, S3C_GPIO_SFN(2) },
-				{ EXYNOS5_GPB1(0), 1, S3C_GPIO_SFN(2) }
+				{ EXYNOS5_GPB1(0), 5, S3C_GPIO_SFN(2) }
+	};
+	struct exynos_gpio_cfg exynos5410_cfg[3] = {
+				{ EXYNOS5410_GPZ(0),  7, S3C_GPIO_SFN(2) },
+				{ EXYNOS5410_GPB0(0), 5, S3C_GPIO_SFN(2) },
+				{ EXYNOS5410_GPB1(0), 5, S3C_GPIO_SFN(2) }
+	};
+	struct exynos_gpio_cfg exynos5420_cfg[3] = {
+				{ EXYNOS5420_GPZ(0),  7, S3C_GPIO_SFN(2) },
+				{ EXYNOS5420_GPB0(0), 5, S3C_GPIO_SFN(2) },
+				{ EXYNOS5420_GPB1(0), 5, S3C_GPIO_SFN(2) }
+	};
+	struct exynos_gpio_cfg exynos5260_cfg[2] = {
+				{ EXYNOS5260_GPZ0(0), 7, S3C_GPIO_SFN(2) },
+				{ EXYNOS5260_GPB0(0), 5, S3C_GPIO_SFN(2) }
 	};
 
-	if (pdev->id < 0 || pdev->id > 2) {
+	if (pdev->id < 0 || pdev->id >= I2S_MAX_DEV) {
 		printk(KERN_ERR "Invalid Device %d\n", pdev->id);
 		return -EINVAL;
 	}
@@ -58,10 +91,25 @@ static int exynos_cfg_i2s_gpio(struct platform_device *pdev)
 	if (soc_is_exynos5250())
 		s3c_gpio_cfgpin_range(exynos5_cfg[pdev->id].addr,
 			exynos5_cfg[pdev->id].num, exynos5_cfg[pdev->id].bit);
-
-	else /* EXYNOS4210, EXYNOS4212 and EXYNOS4412 */
+	else if (soc_is_exynos5410())
+		s3c_gpio_cfgpin_range(exynos5410_cfg[pdev->id].addr,
+			exynos5410_cfg[pdev->id].num, exynos5410_cfg[pdev->id].bit);
+	else if (soc_is_exynos5420())
+		s3c_gpio_cfgpin_range(exynos5420_cfg[pdev->id].addr,
+			exynos5420_cfg[pdev->id].num, exynos5420_cfg[pdev->id].bit);
+	else if (soc_is_exynos4210() || soc_is_exynos4212() ||
+		 soc_is_exynos4412() || soc_is_exynos4415() ||
+		 soc_is_exynos3250() || soc_is_exynos3470())
 		s3c_gpio_cfgpin_range(exynos4_cfg[pdev->id].addr,
 			exynos4_cfg[pdev->id].num, exynos4_cfg[pdev->id].bit);
+	else if (soc_is_exynos5260()) {
+#ifdef CONFIG_MACH_XYREF5260
+		if(pdev->id ==1)
+			return 0;
+#endif
+		s3c_gpio_cfgpin_range(exynos5260_cfg[pdev->id].addr,
+		exynos5260_cfg[pdev->id].num, exynos5260_cfg[pdev->id].bit);
+	}
 
 	return 0;
 }
@@ -86,10 +134,20 @@ static struct resource exynos4_i2s0_resource[] = {
 };
 
 static struct resource exynos5_i2s0_resource[] = {
+#ifdef CONFIG_SOC_EXYNOS5260
+	[0] = DEFINE_RES_MEM(EXYNOS5260_PA_I2S0, 0x100),
+	[1] = DEFINE_RES_DMA(DMACH_PL080_I2S_TXP),
+	[2] = DEFINE_RES_DMA(DMACH_PL080_I2S_RX),
+	[3] = DEFINE_RES_DMA(DMACH_PL080_I2S_TXS),
+	[4] = DEFINE_RES_MEM(EXYNOS5260_PA_AUDSS, 0x100),
+
+#else
 	[0] = DEFINE_RES_MEM(EXYNOS5_PA_I2S0, 0x100),
 	[1] = DEFINE_RES_DMA(DMACH_I2S0_TX),
 	[2] = DEFINE_RES_DMA(DMACH_I2S0_RX),
 	[3] = DEFINE_RES_DMA(DMACH_I2S0S_TX),
+
+#endif
 };
 
 struct platform_device exynos4_device_i2s0 = {
@@ -113,15 +171,24 @@ struct platform_device exynos5_device_i2s0 = {
 };
 
 static const char *rclksrc_v3[] = {
+#ifdef CONFIG_SOC_EXYNOS5260
+	[0] = "aclk_peri_66",
+	[1] = "sclk_i2s",
+#else
 	[0] = "sclk_i2s",
 	[1] = "no_such_clock",
+#endif
 };
 
 static struct s3c_audio_pdata i2sv3_pdata = {
 	.cfg_gpio = exynos_cfg_i2s_gpio,
 	.type = {
 		.i2s = {
+#ifdef CONFIG_SOC_EXYNOS5260
+			.quirks = QUIRK_PRI_6CHAN | QUIRK_NEED_RSTCLR,
+#else
 			.quirks = QUIRK_NO_MUXPSR,
+#endif
 			.src_clk = rclksrc_v3,
 		},
 	},
@@ -134,7 +201,11 @@ static struct resource exynos4_i2s1_resource[] = {
 };
 
 static struct resource exynos5_i2s1_resource[] = {
+#ifdef CONFIG_SOC_EXYNOS5260
+	[0] = DEFINE_RES_MEM(EXYNOS5260_PA_I2S1, 0x100),
+#else
 	[0] = DEFINE_RES_MEM(EXYNOS5_PA_I2S1, 0x100),
+#endif
 	[1] = DEFINE_RES_DMA(DMACH_I2S1_TX),
 	[2] = DEFINE_RES_DMA(DMACH_I2S1_RX),
 };
@@ -204,10 +275,24 @@ static int exynos_pcm_cfg_gpio(struct platform_device *pdev)
 	struct exynos_gpio_cfg exynos5_cfg[3] = {
 				{ EXYNOS5_GPZ(0),  5, S3C_GPIO_SFN(3) },
 				{ EXYNOS5_GPB0(0), 5, S3C_GPIO_SFN(3) },
-				{ EXYNOS5_GPB1(0), 1, S3C_GPIO_SFN(3) }
+				{ EXYNOS5_GPB1(0), 5, S3C_GPIO_SFN(3) }
+	};
+	struct exynos_gpio_cfg exynos5410_cfg[3] = {
+				{ EXYNOS5410_GPZ(0),  5, S3C_GPIO_SFN(3) },
+				{ EXYNOS5410_GPB0(0), 5, S3C_GPIO_SFN(3) },
+				{ EXYNOS5410_GPB1(0), 5, S3C_GPIO_SFN(3) }
+	};
+	struct exynos_gpio_cfg exynos5420_cfg[3] = {
+				{ EXYNOS5420_GPZ(0),  5, S3C_GPIO_SFN(3) },
+				{ EXYNOS5420_GPB0(0), 5, S3C_GPIO_SFN(3) },
+				{ EXYNOS5420_GPB1(0), 5, S3C_GPIO_SFN(3) }
+	};
+	struct exynos_gpio_cfg exynos5260_cfg[2] = {
+				{ EXYNOS5260_GPZ0(0),  5, S3C_GPIO_SFN(3) },
+				{ EXYNOS5260_GPB0(0), 5, S3C_GPIO_SFN(3) }
 	};
 
-	if (pdev->id < 0 || pdev->id > 2) {
+	if (pdev->id < 0 || pdev->id >= PCM_MAX_DEV) {
 		printk(KERN_ERR "Invalid Device %d\n", pdev->id);
 		return -EINVAL;
 	}
@@ -215,10 +300,25 @@ static int exynos_pcm_cfg_gpio(struct platform_device *pdev)
 	if (soc_is_exynos5250())
 		s3c_gpio_cfgpin_range(exynos5_cfg[pdev->id].addr,
 			exynos5_cfg[pdev->id].num, exynos5_cfg[pdev->id].bit);
-
-	else /* EXYNOS4210, EXYNOS4212 and EXYNOS4412 */
+	else if (soc_is_exynos5410())
+		s3c_gpio_cfgpin_range(exynos5410_cfg[pdev->id].addr,
+			exynos5410_cfg[pdev->id].num, exynos5410_cfg[pdev->id].bit);
+	else if (soc_is_exynos5420())
+		s3c_gpio_cfgpin_range(exynos5420_cfg[pdev->id].addr,
+			exynos5420_cfg[pdev->id].num, exynos5420_cfg[pdev->id].bit);
+	else if (soc_is_exynos4210() || soc_is_exynos4212() ||
+		 soc_is_exynos4412() || soc_is_exynos4415() ||
+		 soc_is_exynos3250() || soc_is_exynos3470())
 		s3c_gpio_cfgpin_range(exynos4_cfg[pdev->id].addr,
 			exynos4_cfg[pdev->id].num, exynos4_cfg[pdev->id].bit);
+	else if (soc_is_exynos5260()) {
+#ifdef CONFIG_MACH_XYREF5260
+		if(pdev->id ==1)
+			return 0;
+#endif
+		s3c_gpio_cfgpin_range(exynos5260_cfg[pdev->id].addr,
+		exynos5260_cfg[pdev->id].num, exynos5260_cfg[pdev->id].bit);
+	}
 
 	return 0;
 }
@@ -234,7 +334,11 @@ static struct resource exynos4_pcm0_resource[] = {
 };
 
 static struct resource exynos5_pcm0_resource[] = {
+#ifdef CONFIG_SOC_EXYNOS5260
+	[0] = DEFINE_RES_MEM(EXYNOS5260_PA_PCM0, 0x100),
+#else
 	[0] = DEFINE_RES_MEM(EXYNOS5_PA_PCM0, 0x100),
+#endif
 	[1] = DEFINE_RES_DMA(DMACH_PCM0_TX),
 	[2] = DEFINE_RES_DMA(DMACH_PCM0_RX),
 };
@@ -266,7 +370,11 @@ static struct resource exynos4_pcm1_resource[] = {
 };
 
 static struct resource exynos5_pcm1_resource[] = {
+#ifdef CONFIG_SOC_EXYNOS5260
+	[0] = DEFINE_RES_MEM(EXYNOS5260_PA_PCM1, 0x100),
+#else
 	[0] = DEFINE_RES_MEM(EXYNOS5_PA_PCM1, 0x100),
+#endif
 	[1] = DEFINE_RES_DMA(DMACH_PCM1_TX),
 	[2] = DEFINE_RES_DMA(DMACH_PCM1_RX),
 };
@@ -330,8 +438,7 @@ static int exynos_ac97_cfg_gpio(struct platform_device *pdev)
 	/* configure GPIO for ac97 port */
 	if (soc_is_exynos5250())
 		s3c_gpio_cfgpin_range(EXYNOS5_GPB0(0), 5, S3C_GPIO_SFN(4));
-
-	else /* EXYNOS4210, EXYNOS4212 and EXYNOS4412 */
+	else if (soc_is_exynos4210() || soc_is_exynos4212() || soc_is_exynos4412())
 		s3c_gpio_cfgpin_range(EXYNOS4_GPC0(0), 5, S3C_GPIO_SFN(4));
 
 	return 0;
@@ -369,10 +476,22 @@ static int exynos_spdif_cfg_gpio(struct platform_device *pdev)
 {
 	/* configure GPIO for SPDIF port */
 	if (soc_is_exynos5250())
-		s3c_gpio_cfgpin_range(EXYNOS5_GPB1(0), 1, S3C_GPIO_SFN(4));
-
-	else /* EXYNOS4210, EXYNOS4212 and EXYNOS4412 */
+		s3c_gpio_cfgpin_range(EXYNOS5_GPB1(0), 2, S3C_GPIO_SFN(4));
+	else if (soc_is_exynos5410())
+		s3c_gpio_cfgpin_range(EXYNOS5410_GPB1(0), 2, S3C_GPIO_SFN(4));
+	else if (soc_is_exynos5420())
+		s3c_gpio_cfgpin_range(EXYNOS5420_GPB1(0), 2, S3C_GPIO_SFN(4));
+	else if (soc_is_exynos4210() || soc_is_exynos4212() ||
+		 soc_is_exynos4412() || soc_is_exynos4415() ||
+		 soc_is_exynos3470())
 		s3c_gpio_cfgpin_range(EXYNOS4_GPC1(0), 2, S3C_GPIO_SFN(4));
+	else if (soc_is_exynos5260()) {
+#ifdef CONFIG_MACH_XYREF5260
+		s3c_gpio_cfgpin_range(EXYNOS5260_GPB0(2), 1, S3C_GPIO_SFN(4));
+#else
+		s3c_gpio_cfgpin_range(EXYNOS5260_GPB0(1), 2, S3C_GPIO_SFN(4));
+#endif
+	}
 
 	return 0;
 }
@@ -383,7 +502,11 @@ static struct resource exynos4_spdif_resource[] = {
 };
 
 static struct resource exynos5_spdif_resource[] = {
+#ifdef CONFIG_SOC_EXYNOS5260
+	[0] = DEFINE_RES_MEM(EXYNOS5260_PA_SPDIF, 0x100),
+#else
 	[0] = DEFINE_RES_MEM(EXYNOS5_PA_SPDIF, 0x100),
+#endif
 	[1] = DEFINE_RES_DMA(DMACH_SPDIF),
 };
 
@@ -417,12 +540,145 @@ struct platform_device exynos5_device_spdif = {
 	},
 };
 
+static struct resource exynos4_srp_resource[] = {
+	[0] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_INTMEM, 0x39000),
+	[1] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_COMMBOX, 0x200),
+};
+
 static struct resource exynos5_srp_resource[] = {
 	[0] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_INTMEM, 0x49000),
 	[1] = DEFINE_RES_MEM(EXYNOS_PA_AUDSS_COMMBOX, 0x200),
 };
 
 static u64 exynos_srp_dmamask = DMA_BIT_MASK(32);
+
+static struct exynos_srp_pdata exynos4270_pdata = {
+	.type = SRP_HW_RESET,
+	.use_iram = true,
+	.iram_size = 384 * 1024,
+	.icache_size = 64 * 1024,
+	.dmem_size = 128 * 1024,
+	.cmem_size = 36 * 1024,
+	.commbox_size = 0x200,
+	.ibuf = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.size = 16 * 1024,
+		.offset = 0x50000,
+		.num = 2,
+	},
+	.obuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 32 * 1024,
+		.offset = 0x4,
+		.num = 2,
+	},
+	.idma = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.offset = 0x58000,
+	},
+};
+
+#if defined(CONFIG_SOC_EXYNOS4415) || defined(CONFIG_SOC_EXYNOS3470)
+static struct exynos_srp_pdata exynos4_pdata = {
+	.type = SRP_HW_RESET,
+	.use_iram = true,
+	.iram_size = 384 * 1024,
+	.icache_size = 64 * 1024,
+	.dmem_size = 128 * 1024,
+	.cmem_size = 36 * 1024,
+	.commbox_size = 0x200,
+	.ibuf = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.size = 16 * 1024,
+		.offset = 0x50000,
+		.num = 2,
+	},
+	.obuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 32 * 1024,
+		.offset = 0x4,
+		.num = 2,
+	},
+	.idma = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.offset = 0x58000,
+	},
+};
+#else
+static struct exynos_srp_pdata exynos4_pdata = {
+	.type = SRP_HW_RESET,
+	.use_iram = true,
+	.iram_size = 256 * 1024,
+	.icache_size = 64 * 1024,
+	.dmem_size = 128 * 1024,
+	.cmem_size = 36 * 1024,
+	.commbox_size = 0x200,
+	.ibuf = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.size = 16 * 1024,
+		.offset = 0x30000,
+		.num = 2,
+	},
+	.obuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 32 * 1024,
+		.offset = 0x4,
+		.num = 2,
+	},
+	.idma = {
+		.base = EXYNOS4_PA_SYSRAM1,
+		.offset = 0x38000,
+	},
+};
+#endif
+static struct exynos_srp_pdata exynos5_pdata = {
+	.type = SRP_SW_RESET,
+	.use_iram = false,
+	.icache_size = 96 * 1024,
+	.dmem_size = 160 * 1024,
+	.cmem_size = 36 * 1024,
+	.commbox_size = 0x308,
+	.ibuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 16 * 1024,
+		.offset = 0x8104,
+		.num = 2,
+	},
+	.obuf = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.size = 16 * 1024,
+		.offset = 0x10104,
+		.num = 2,
+	},
+	.idma = {
+		.base = EXYNOS_PA_AUDSS_INTMEM,
+		.offset = 0x4,
+	},
+};
+
+struct platform_device exynos4270_device_srp = {
+	.name = "samsung-rp",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(exynos4_srp_resource),
+	.resource = exynos4_srp_resource,
+	.dev = {
+		.dma_mask = &exynos_srp_dmamask,
+		.coherent_dma_mask = DMA_BIT_MASK(32),
+		.platform_data = &exynos4270_pdata,
+	},
+};
+
+struct platform_device exynos4_device_srp = {
+	.name = "samsung-rp",
+	.id = -1,
+	.num_resources = ARRAY_SIZE(exynos4_srp_resource),
+	.resource = exynos4_srp_resource,
+	.dev = {
+		.dma_mask = &exynos_srp_dmamask,
+		.coherent_dma_mask = DMA_BIT_MASK(32),
+		.platform_data = &exynos4_pdata,
+	},
+};
 
 struct platform_device exynos5_device_srp = {
 	.name = "samsung-rp",
@@ -432,5 +688,6 @@ struct platform_device exynos5_device_srp = {
 	.dev = {
 		.dma_mask = &exynos_srp_dmamask,
 		.coherent_dma_mask = DMA_BIT_MASK(32),
+		.platform_data = &exynos5_pdata,
 	},
 };

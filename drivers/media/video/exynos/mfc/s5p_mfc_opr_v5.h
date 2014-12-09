@@ -15,7 +15,6 @@
 #ifndef S5P_MFC_OPR_V5_H_
 #define S5P_MFC_OPR_V5_H_
 
-#include "s5p_mfc_common.h"
 #include "s5p_mfc_mem.h"
 
 #define MFC_CTRL_MODE_CUSTOM	MFC_CTRL_MODE_SHM
@@ -41,11 +40,11 @@ int s5p_mfc_set_dec_stream_buffer(struct s5p_mfc_ctx *ctx, dma_addr_t buf_addr,
 						  unsigned int buf_size);
 
 void s5p_mfc_set_enc_frame_buffer(struct s5p_mfc_ctx *ctx,
-		dma_addr_t y_addr, dma_addr_t c_addr);
+		dma_addr_t addr[], int num_planes);
 int s5p_mfc_set_enc_stream_buffer(struct s5p_mfc_ctx *ctx,
 		dma_addr_t addr, unsigned int size);
 void s5p_mfc_get_enc_frame_buffer(struct s5p_mfc_ctx *ctx,
-		dma_addr_t *y_addr, dma_addr_t *c_addr);
+		dma_addr_t addr[], int num_planes);
 int s5p_mfc_set_enc_ref_buffer(struct s5p_mfc_ctx *mfc_ctx);
 
 int s5p_mfc_decode_one_frame(struct s5p_mfc_ctx *ctx, int last_frame);
@@ -103,9 +102,15 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 #define s5p_mfc_get_inst_no()		readl(dev->regs_base + \
 						S5P_FIMV_RISC2HOST_ARG1)
 #define s5p_mfc_get_mv_count()		0
+#define s5p_mfc_get_dis_count()		0
 #define s5p_mfc_get_mvc_num_views()	-1
 #define s5p_mfc_get_mvc_disp_view_id()	-1
 #define s5p_mfc_get_enc_dpb_count()	-1
+
+#define mfc_get_disp_first_addr()	-1
+#define mfc_get_dec_first_addr()	-1
+#define mfc_get_dec_used_flag()		s5p_mfc_read_shm(ctx, USED_DPB_FLAG)
+
 #define s5p_mfc_get_enc_strm_size()	readl(dev->regs_base + \
 						S5P_FIMV_ENC_SI_STRM_SIZE)
 #define s5p_mfc_get_enc_slice_type()	readl(dev->regs_base + \
@@ -113,6 +118,19 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 #define s5p_mfc_get_enc_pic_count()	readl(dev->regs_base + \
 						S5P_FIMV_ENC_SI_PIC_CNT)
 #define s5p_mfc_get_sei_avail_status()	s5p_mfc_read_shm(ctx, FRAME_PACK_SEI_AVAIL)
+
+#define s5p_mfc_is_interlace_picture()	((readl(dev->regs_base + \
+					S5P_FIMV_SI_DECODED_STATUS) & \
+					S5P_FIMV_DEC_STATUS_INTERLACE_MASK) == \
+					S5P_FIMV_DEC_STATUS_INTERLACE)
+
+#define s5p_mfc_get_dec_status()	(readl(dev->regs_base + \
+						S5P_FIMV_SI_DECODED_STATUS) \
+						& S5P_FIMV_DECODED_FRAME_MASK)
+
+#define s5p_mfc_get_dec_frame()		(readl(dev->regs_base + \
+						S5P_FIMV_SI_FRAME_TYPE) \
+						& S5P_FIMV_DECODED_FRAME_MASK)
 
 #define s5p_mfc_clear_int_flags()				\
 	do {							\
@@ -134,6 +152,11 @@ void s5p_mfc_enc_calc_src_size(struct s5p_mfc_ctx *ctx);
 #define ENC_H264_PROFILE_MAX		2
 #define ENC_H264_LEVEL_MAX		40
 #define ENC_MPEG4_VOP_TIME_RES_MAX	((1 << 15) - 1)
+
+enum {
+	ENC_REF_2 = 2,
+	ENC_REF_4 = 4,
+};
 
 void s5p_mfc_try_run(struct s5p_mfc_dev *dev);
 

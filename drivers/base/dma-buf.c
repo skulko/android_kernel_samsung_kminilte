@@ -28,8 +28,6 @@
 #include <linux/anon_inodes.h>
 #include <linux/export.h>
 
-static inline int is_dma_buf_file(struct file *);
-
 static int dma_buf_release(struct inode *inode, struct file *file)
 {
 	struct dma_buf *dmabuf;
@@ -69,7 +67,7 @@ static const struct file_operations dma_buf_fops = {
 /*
  * is_dma_buf_file - Check if struct file* is associated with dma_buf
  */
-static inline int is_dma_buf_file(struct file *file)
+int is_dma_buf_file(struct file *file)
 {
 	return file->f_op == &dma_buf_fops;
 }
@@ -164,10 +162,16 @@ struct dma_buf *dma_buf_get(int fd)
 
 	file = fget(fd);
 
-	if (!file)
+	if (!file) {
+		pr_err("%s: fd %d is not allocated\n", __func__, fd);
 		return ERR_PTR(-EBADF);
+	}
 
 	if (!is_dma_buf_file(file)) {
+#ifndef CONFIG_SOC_EXYNOS4415
+		pr_err("%s: fd %d is opened for %s\n", __func__,
+				fd, file->f_path.dentry->d_iname);
+#endif
 		fput(file);
 		return ERR_PTR(-EINVAL);
 	}
@@ -468,37 +472,3 @@ int dma_buf_mmap(struct dma_buf *dmabuf, struct vm_area_struct *vma,
 	return dmabuf->ops->mmap(dmabuf, vma);
 }
 EXPORT_SYMBOL_GPL(dma_buf_mmap);
-
-/**
- * dma_buf_vmap - Create virtual mapping for the buffer object into kernel address space. Same restrictions as for vmap and friends apply.
- * @dma_buf:	[in]	buffer to vmap
- *
- * This call may fail due to lack of virtual mapping address space.
- * These calls are optional in drivers. The intended use for them
- * is for mapping objects linear in kernel space for high use objects.
- * Please attempt to use kmap/kunmap before thinking about these interfaces.
- */
-void *dma_buf_vmap(struct dma_buf *dmabuf)
-{
-	if (WARN_ON(!dmabuf))
-		return NULL;
-
-	if (dmabuf->ops->vmap)
-		return dmabuf->ops->vmap(dmabuf);
-	return NULL;
-}
-EXPORT_SYMBOL_GPL(dma_buf_vmap);
-
-/**
- * dma_buf_vunmap - Unmap a vmap obtained by dma_buf_vmap.
- * @dma_buf:	[in]	buffer to vmap
- */
-void dma_buf_vunmap(struct dma_buf *dmabuf, void *vaddr)
-{
-	if (WARN_ON(!dmabuf))
-		return;
-
-	if (dmabuf->ops->vunmap)
-		dmabuf->ops->vunmap(dmabuf, vaddr);
-}
-EXPORT_SYMBOL_GPL(dma_buf_vunmap);

@@ -94,24 +94,17 @@ config W1_SLAVE_DS2781
 
 	  If you are unsure, say N.
 
-config W1_SLAVE_DS2784
-	tristate "Dallas 2784 fuel gauge chip"
-	depends on W1
-	help
-	  If you enable this you will have DS2784 fuel gauge
-	  chip support.
-
-	  This fuel gauge chip is used to monitor remaining battery
-	  capacity, and possibly protect against charging errors, for
-	  Li+ batteries.
-
-	  If you are unsure, say N.
-
 config W1_SLAVE_BQ27000
 	tristate "BQ27000 slave support"
 	depends on W1
 	help
 	  Say Y here if you want to use a hdq
 	  bq27000 slave support.
+
+config W1_SLAVE_DS28EL15
+	tristate "MAXIM DS28EL15 DeepCover Secure Authenticator with SHA-256 and 512-Bit User EEPROM"
+	depends on W1
+	help
+	  If you enable this you will have the DS28EL15 secure chip support.
 
 endmenu

@@ -29,14 +29,20 @@
 #include <media/v4l2-subdev.h>
 #include <media/exynos_mc.h>
 #include <plat/mipi_csis.h>
+#include <plat/cpu.h>
 
 static int debug;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "Debug level (0-1)");
 
 #define MODULE_NAME			"s5p-mipi-csis"
+#if defined(CONFIG_VIDEO_S5K4ECGX) || defined(CONFIG_VIDEO_SR300PC30) || defined(CONFIG_VIDEO_SR130PC20)
+#define DEFAULT_CSIS_SINK_WIDTH		640
+#define DEFAULT_CSIS_SINK_HEIGHT	480
+#else
 #define DEFAULT_CSIS_SINK_WIDTH		800
 #define DEFAULT_CSIS_SINK_HEIGHT	480
+#endif
 #define CLK_NAME_SIZE			20
 
 enum csis_input_entity {
@@ -56,16 +62,28 @@ enum csis_output_entity {
 /* CSIS global control */
 #define S5PCSIS_CTRL			0x00
 #define S5PCSIS_CTRL_DPDN_DEFAULT	(0 << 31)
-#define S5PCSIS_CTRL_DPDN_SWAP		(1 << 31)
+#define S5PCSIS_CTRL_DPDN_SWAP		(soc_is_exynos5250() ? \
+					(0x1 << 31) : \
+					(0x3 << 30))
+#define S5PCSIS_CTRL_INTERLEAVE_MASK	(3 << 22)
+#define S5PCSIS_CTRL_INTERLEAVE_CH_0	(0 << 22)
+#define S5PCSIS_CTRL_INTERLEAVE_DT	(1 << 22)
+#define S5PCSIS_CTRL_INTERLEAVE_VC	(2 << 22)
+#define S5PCSIS_CTRL_INTERLEAVE_DT_VC	(3 << 22)
 #define S5PCSIS_CTRL_ALIGN_32BIT	(1 << 20)
-#define S5PCSIS_CTRL_UPDATE_SHADOW	(1 << 16)
+#define S5PCSIS_CTRL_UPDATE_SHADOW	(soc_is_exynos5250() ? \
+					(0x1 << 16) : \
+					(0xF << 16))
 #define S5PCSIS_CTRL_WCLK_EXTCLK	(1 << 8)
 #define S5PCSIS_CTRL_RESET		(1 << 4)
+#define S5PCSIS_CTRL_NR_LANE_MASK	(3 << 2)
 #define S5PCSIS_CTRL_ENABLE		(1 << 0)
 
 /* D-PHY control */
 #define S5PCSIS_DPHYCTRL		0x04
-#define S5PCSIS_DPHYCTRL_HSS_MASK	(0x1f << 27)
+#define S5PCSIS_DPHYCTRL_HSS_MASK	(soc_is_exynos5250() ? \
+					(0x1f << 27) : \
+					(0x1f << 24))
 #define S5PCSIS_DPHYCTRL_ENABLE		(0x1f << 0)
 
 #define S5PCSIS_CONFIG			0x08
@@ -77,27 +95,43 @@ enum csis_output_entity {
 #define S5PCSIS_CFG_FMT_USER(x)		((0x30 + x - 1) << 2)
 #define S5PCSIS_CFG_FMT_MASK		(0x3f << 2)
 #define S5PCSIS_CFG_NR_LANE_MASK	3
+#define S5PCSIS_CFG_VC_MASK		3
 
 /* Interrupt mask. */
 #define S5PCSIS_INTMSK			0x10
-#define S5PCSIS_INTMSK_EN_ALL		0xf000103f
+#define S5PCSIS_INTMSK_EN_ALL		(soc_is_exynos5250() ? \
+					0xf000103f : \
+					0xf001fff7)
 #define S5PCSIS_INTSRC			0x14
 
 /* Pixel resolution */
 #define S5PCSIS_RESOL			0x2c
 #define CSIS_MAX_PIX_WIDTH		0xffff
 #define CSIS_MAX_PIX_HEIGHT		0xffff
-#define CSIS_SRC_CLK			"mout_mpll_user"
+
+#if defined(CONFIG_SOC_EXYNOS4415) || defined(CONFIG_SOC_EXYNOS4270) || defined(CONFIG_SOC_EXYNOS3470)
+#define CSIS_SRC_CLK			"mout_mpll_user_top"
+#else
+#define CSIS_SRC_CLK			"mout_mpll"
+#endif
 
 enum {
 	CSIS_CLK_MUX,
 	CSIS_CLK_GATE,
 };
 
+#if defined(CONFIG_ARCH_EXYNOS5)
 static char *csi_clock_name[] = {
 	[CSIS_CLK_MUX]  = "sclk_gscl_wrap",
 	[CSIS_CLK_GATE] = "gscl_wrap",
+ };
+#elif defined(CONFIG_ARCH_EXYNOS4)
+static char *csi_clock_name[] = {
+	[CSIS_CLK_MUX]  = "sclk_csis",
+	[CSIS_CLK_GATE] = "csis",
 };
+#endif
+
 #define NUM_CSIS_CLOCKS	ARRAY_SIZE(csi_clock_name)
 
 enum {
@@ -137,6 +171,9 @@ struct csis_state {
 	struct v4l2_mbus_framefmt format;
 	enum csis_input_entity		input;
 	enum csis_output_entity		output;
+#ifdef CONFIG_VIDEO_EXYNOS_MIPI_CSIS_IRQ_DEBUG
+	int error_irq_cnt;
+#endif
 };
 
 /**
@@ -159,6 +196,9 @@ static const struct csis_pix_format s5pcsis_formats[] = {
 	}, {
 		.code = V4L2_MBUS_FMT_JPEG_1X8,
 		.fmt_reg = S5PCSIS_CFG_FMT_USER(1),
+	}, {
+		.code = V4L2_MBUS_FMT_SGRBG8_1X8,
+		.fmt_reg = S5PCSIS_CFG_FMT_RAW8,
 	},
 };
 
@@ -240,7 +280,10 @@ static void s5pcsis_set_hsync_settle(struct csis_state *state, int settle)
 {
 	u32 val = s5pcsis_read(state, S5PCSIS_DPHYCTRL);
 
-	val = (val & ~S5PCSIS_DPHYCTRL_HSS_MASK) | (settle << 27);
+	if (soc_is_exynos5250())
+		val = (val & ~S5PCSIS_DPHYCTRL_HSS_MASK) | (settle << 27);
+	else
+		val = (val & ~S5PCSIS_DPHYCTRL_HSS_MASK) | (settle << 24);
 	s5pcsis_write(state, S5PCSIS_DPHYCTRL, val);
 }
 
@@ -250,19 +293,32 @@ static void s5pcsis_set_params(struct csis_state *state)
 	u32 val;
 
 	val = s5pcsis_read(state, S5PCSIS_CONFIG);
-	val = (val & ~S5PCSIS_CFG_NR_LANE_MASK) | (pdata->lanes - 1);
+	if (soc_is_exynos5250())
+		val = (val & ~S5PCSIS_CFG_NR_LANE_MASK) | (pdata->lanes - 1);
+#if defined(CONFIG_SOC_EXYNOS4415) || defined(CONFIG_SOC_EXYNOS4270) || defined(CONFIG_SOC_EXYNOS3470)
+	val = val & ~S5PCSIS_CFG_VC_MASK;
+#endif
 	s5pcsis_write(state, S5PCSIS_CONFIG, val);
 
 	__s5pcsis_set_format(state);
 	s5pcsis_set_hsync_settle(state, pdata->hs_settle);
 
 	val = s5pcsis_read(state, S5PCSIS_CTRL);
+	/* no data interleave */
+#if defined(CONFIG_SOC_EXYNOS4415) || defined(CONFIG_SOC_EXYNOS4270) || defined(CONFIG_SOC_EXYNOS3470)
+	val = (val & ~S5PCSIS_CTRL_INTERLEAVE_MASK)
+		| S5PCSIS_CTRL_INTERLEAVE_CH_0;
+#endif
 	if (pdata->alignment == 32)
 		val |= S5PCSIS_CTRL_ALIGN_32BIT;
 	else /* 24-bits */
 		val &= ~S5PCSIS_CTRL_ALIGN_32BIT;
 	/* using external clock. */
-	val |= S5PCSIS_CTRL_WCLK_EXTCLK;
+	if (soc_is_exynos5250())
+		val |= S5PCSIS_CTRL_WCLK_EXTCLK;
+#if defined(CONFIG_SOC_EXYNOS4415) || defined(CONFIG_SOC_EXYNOS4270) || defined(CONFIG_SOC_EXYNOS3470)
+	val = (val & ~S5PCSIS_CTRL_NR_LANE_MASK) | ((pdata->lanes - 1) << 2);
+#endif
 	s5pcsis_write(state, S5PCSIS_CTRL, val);
 
 	/* Update the shadow register. */
@@ -288,7 +344,7 @@ static int s5pcsis_clk_get(struct csis_state *state)
 	for (i = 0; i < NUM_CSIS_CLOCKS; i++) {
 		snprintf(clk_name, sizeof(clk_name), "%s%d",
 			 csi_clock_name[i], state->pdev->id);
-		state->clock[i] = clk_get(dev, clk_name);
+		state->clock[i] = clk_get(dev, csi_clock_name[i]);
 		if (IS_ERR(state->clock[i])) {
 			s5pcsis_clk_put(state);
 			dev_err(dev, "failed to get clock: %s\n",
@@ -300,20 +356,32 @@ static int s5pcsis_clk_get(struct csis_state *state)
 }
 
 static int s5pcsis_resume(struct device *dev);
+static int s5pcsis_suspend(struct device *dev);
 static int s5pcsis_s_power(struct v4l2_subdev *sd, int on)
 {
 	struct csis_state *state = sd_to_csis_state(sd);
-	struct device *dev = &state->pdev->dev;
+	int ret = 0;
+
+	v4l2_dbg(1, debug, sd, "%s: %d, state: 0x%x\n",
+		 __func__, on, state->flags);
 
 	if (on) {
-#ifndef CONFIG_PM_RUNTIME
-		return s5pcsis_resume(dev);
+#ifdef CONFIG_PM_RUNTIME
+		ret = pm_runtime_get_sync(&state->pdev->dev);
 #else
-		return pm_runtime_get_sync(dev);
+		ret = s5pcsis_resume(&state->pdev->dev);
+#endif
+		if (ret && ret != 1)
+			return ret;
+	} else {
+#ifdef CONFIG_PM_RUNTIME
+		pm_runtime_put_sync(&state->pdev->dev);
+#else
+		s5pcsis_suspend(&state->pdev->dev);
 #endif
 	}
 
-	return pm_runtime_put_sync(dev);
+	return 0;
 }
 
 static void s5pcsis_start_stream(struct csis_state *state)
@@ -321,6 +389,10 @@ static void s5pcsis_start_stream(struct csis_state *state)
 	s5pcsis_reset(state);
 	s5pcsis_set_params(state);
 	s5pcsis_system_enable(state, true);
+
+#ifdef CONFIG_VIDEO_EXYNOS_MIPI_CSIS_IRQ_DEBUG
+	state->error_irq_cnt = 0;
+#endif
 	s5pcsis_enable_interrupts(state, true);
 }
 
@@ -336,14 +408,9 @@ static int s5pcsis_s_stream(struct v4l2_subdev *sd, int enable)
 	struct csis_state *state = sd_to_csis_state(sd);
 	int ret = 0;
 
-	v4l2_dbg(1, debug, sd, "%s: %d, state: 0x%x\n",
+	v4l2_info(sd, "%s: %d, state: 0x%x\n",
 		 __func__, enable, state->flags);
 
-	if (enable) {
-		ret = pm_runtime_get_sync(&state->pdev->dev);
-		if (ret && ret != 1)
-			return ret;
-	}
 	mutex_lock(&state->lock);
 	if (enable) {
 		if (state->flags & ST_SUSPENDED) {
@@ -358,10 +425,7 @@ static int s5pcsis_s_stream(struct v4l2_subdev *sd, int enable)
 	}
 unlock:
 	mutex_unlock(&state->lock);
-	if (!enable)
-		pm_runtime_put(&state->pdev->dev);
-
-	return ret == 1 ? 0 : ret;
+	return ret;
 }
 
 static int s5pcsis_enum_mbus_code(struct v4l2_subdev *sd,
@@ -521,20 +585,20 @@ static int s5pcsis_link_setup(struct media_entity *entity,
 	switch (local->index | media_entity_type(remote->entity)) {
 	case CSIS_PAD_SINK | MEDIA_ENT_T_V4L2_SUBDEV:
 		if (flags & MEDIA_LNK_FL_ENABLED) {
-			v4l2_info(sd, "%s : sink link enabled\n", __func__);
+			v4l2_dbg(1, debug, sd, "%s : sink link enabled\n", __func__);
 			state->input = CSIS_INPUT_SENSOR;
 		} else {
-			v4l2_info(sd, "%s : sink link disabled\n", __func__);
+			v4l2_dbg(1, debug, sd, "%s : sink link disabled\n", __func__);
 			state->input = CSIS_INPUT_NONE;
 		}
 		break;
 
 	case CSIS_PAD_SOURCE | MEDIA_ENT_T_V4L2_SUBDEV:
 		if (flags & MEDIA_LNK_FL_ENABLED) {
-			v4l2_info(sd, "%s : source link enabled\n", __func__);
+			v4l2_dbg(1, debug, sd, "%s : source link enabled\n", __func__);
 			state->output = CSIS_OUTPUT_FLITE;
 		} else {
-			v4l2_info(sd, "%s : source link disabled\n", __func__);
+			v4l2_dbg(1, debug, sd, "%s : source link disabled\n", __func__);
 			state->output = CSIS_OUTPUT_NONE;
 		}
 		break;
@@ -556,11 +620,25 @@ static irqreturn_t s5pcsis_irq_handler(int irq, void *dev_id)
 	struct csis_state *state = dev_id;
 	u32 val;
 
+	if (!(state->flags & ST_POWERED))
+		return IRQ_HANDLED;
+
 	/* Just clear the interrupt pending bits. */
 	val = s5pcsis_read(state, S5PCSIS_INTSRC);
 	s5pcsis_write(state, S5PCSIS_INTSRC, val);
 
+#ifdef CONFIG_VIDEO_EXYNOS_MIPI_CSIS_IRQ_DEBUG
+	if (state->error_irq_cnt < 100) {
+		if ((state->error_irq_cnt < 20) || !(state->error_irq_cnt % 10)) {
+			v4l2_info(&state->sd, "%s : error : [%d] 0x%x\n", 
+				__func__, state->error_irq_cnt, val);
+		}
+		
+		state->error_irq_cnt++;
+	}
+#else
 	v4l2_info(&state->sd, "%s : error : 0x%x\n", __func__, val);
+#endif
 
 	return IRQ_HANDLED;
 }
@@ -671,7 +749,7 @@ static int __devinit s5pcsis_probe(struct platform_device *pdev)
 	}
 
 	if (!pdata->fixed_phy_vdd) {
-		state->supply = regulator_get(&pdev->dev, "mipi_csi");
+		state->supply = regulator_get(&pdev->dev, "vdd11");
 		if (IS_ERR(state->supply)) {
 			ret = PTR_ERR(state->supply);
 			state->supply = NULL;
@@ -679,7 +757,7 @@ static int __devinit s5pcsis_probe(struct platform_device *pdev)
 		}
 	}
 
-	ret = request_irq(state->irq, s5pcsis_irq_handler, 0,
+	ret = request_irq(state->irq, s5pcsis_irq_handler, IRQF_SHARED,
 			  dev_name(&pdev->dev), state);
 	if (ret) {
 		dev_err(&pdev->dev, "request_irq failed\n");
@@ -841,6 +919,7 @@ static int __devexit s5pcsis_remove(struct platform_device *pdev)
 
 	pm_runtime_disable(&pdev->dev);
 	s5pcsis_suspend(&pdev->dev);
+
 	clk_disable(state->clock[CSIS_CLK_MUX]);
 	pm_runtime_set_suspended(&pdev->dev);
 
@@ -872,18 +951,7 @@ static struct platform_driver s5pcsis_driver = {
 	},
 };
 
-static int __init s5pcsis_init(void)
-{
-	return platform_driver_probe(&s5pcsis_driver, s5pcsis_probe);
-}
-
-static void __exit s5pcsis_exit(void)
-{
-	platform_driver_unregister(&s5pcsis_driver);
-}
-
-module_init(s5pcsis_init);
-module_exit(s5pcsis_exit);
+module_platform_driver(s5pcsis_driver);
 
 MODULE_AUTHOR("Sylwester Nawrocki <s.nawrocki@samsung.com>");
 MODULE_DESCRIPTION("S5P/EXYNOS4 MIPI CSI receiver driver");

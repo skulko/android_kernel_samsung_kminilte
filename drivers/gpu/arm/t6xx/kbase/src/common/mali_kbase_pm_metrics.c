@@ -105,7 +105,7 @@ KBASE_EXPORT_TEST_API(kbasep_pm_metrics_term)
 void kbasep_pm_record_gpu_idle(kbase_device *kbdev)
 {
 	unsigned long flags;
-	ktime_t now;
+	ktime_t now = ktime_get();
 	ktime_t diff;
 
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
@@ -116,7 +116,6 @@ void kbasep_pm_record_gpu_idle(kbase_device *kbdev)
 
 	kbdev->pm.metrics.gpu_active = MALI_FALSE;
 
-	now = ktime_get();
 	diff = ktime_sub(now, kbdev->pm.metrics.time_period_start);
 
 	kbdev->pm.metrics.time_busy += (u32) (ktime_to_ns(diff) >> KBASE_PM_TIME_SHIFT);
@@ -130,7 +129,7 @@ KBASE_EXPORT_TEST_API(kbasep_pm_record_gpu_idle)
 void kbasep_pm_record_gpu_active(kbase_device *kbdev)
 {
 	unsigned long flags;
-	ktime_t now;
+	ktime_t now = ktime_get();
 	ktime_t diff;
 
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
@@ -141,7 +140,6 @@ void kbasep_pm_record_gpu_active(kbase_device *kbdev)
 
 	kbdev->pm.metrics.gpu_active = MALI_TRUE;
 
-	now = ktime_get();
 	diff = ktime_sub(now, kbdev->pm.metrics.time_period_start);
 
 	kbdev->pm.metrics.time_idle += (u32) (ktime_to_ns(diff) >> KBASE_PM_TIME_SHIFT);
@@ -191,8 +189,10 @@ int kbase_pm_get_dvfs_utilisation(kbase_device *kbdev)
 
 	utilisation = (100 * kbdev->pm.metrics.time_busy) / (kbdev->pm.metrics.time_idle + kbdev->pm.metrics.time_busy);
 
+#ifdef CONFIG_MALI_T6XX_DVFS
+	kbase_platform_dvfs_event(kbdev, utilisation);
+#endif				/*CONFIG_MALI_T6XX_DVFS */
  out:
-
 	kbdev->pm.metrics.time_idle = 0;
 	kbdev->pm.metrics.time_busy = 0;
 
@@ -237,9 +237,6 @@ kbase_pm_dvfs_action kbase_pm_get_dvfs_action(kbase_device *kbdev)
 
 	kbdev->pm.metrics.utilisation = utilisation;
  out:
-#ifdef CONFIG_MALI_T6XX_DVFS
-	kbase_platform_dvfs_event(kbdev, utilisation);
-#endif				/*CONFIG_MALI_T6XX_DVFS */
 	kbdev->pm.metrics.time_idle = 0;
 	kbdev->pm.metrics.time_busy = 0;
 	spin_unlock_irqrestore(&kbdev->pm.metrics.lock, flags);

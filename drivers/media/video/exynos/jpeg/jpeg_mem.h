@@ -1,6 +1,6 @@
 /* linux/drivers/media/video/exynos/jpeg/jpeg_mem.h
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+ * Copyright (c) 2012~2013 Samsung Electronics Co., Ltd.
  * http://www.samsung.com/
  *
  * Definition for Operation of Jpeg encoder/docoder with memory
@@ -33,7 +33,7 @@ extern const struct jpeg_vb2 jpeg_vb2_cma;
 extern const struct jpeg_vb2 jpeg_vb2_ion;
 #endif
 
-#define MAX_JPEG_WIDTH	3264
-#define MAX_JPEG_HEIGHT	2448
+#define MAX_JPEG_WIDTH	16368
+#define MAX_JPEG_HEIGHT	16368
 
 #endif /* __JPEG_MEM_H__ */

@@ -567,9 +567,12 @@ static int mmc_sdio_init_uhs_card(struct mmc_card *card)
 		goto out;
 
 	/* Initialize and start re-tuning timer */
-	if (!mmc_host_is_spi(card->host) && card->host->ops->execute_tuning)
+	if (!mmc_host_is_spi(card->host) && card->host->ops->execute_tuning) {
+		card->host->tuning_progress = true;
 		err = card->host->ops->execute_tuning(card->host,
 						      MMC_SEND_TUNING_BLOCK);
+		card->host->tuning_progress = false;
+	}
 
 out:
 
@@ -590,6 +593,8 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
+
+	host->host_flag |= MMC_FLAG_INIT;
 
 	/* If host that supports UHS-I sets S18R to 1 in arg of CMD5 to request
 	 * change of signaling level to 1.8V
@@ -637,14 +642,16 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 		if (oldcard && (oldcard->type != MMC_TYPE_SD_COMBO ||
 		    memcmp(card->raw_cid, oldcard->raw_cid, sizeof(card->raw_cid)) != 0)) {
 			mmc_remove_card(card);
-			return -ENOENT;
+			err = -ENOENT;
+			goto err;
 		}
 	} else {
 		card->type = MMC_TYPE_SDIO;
 
 		if (oldcard && oldcard->type != MMC_TYPE_SDIO) {
 			mmc_remove_card(card);
-			return -ENOENT;
+			err = -ENOENT;
+			goto err;
 		}
 	}
 
@@ -701,7 +708,7 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 	if (!oldcard && card->type == MMC_TYPE_SD_COMBO) {
 		err = mmc_sd_get_csd(host, card);
 		if (err)
-			return err;
+			goto err;
 
 		mmc_decode_cid(card);
 	}
@@ -766,8 +773,10 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 		int same = (card->cis.vendor == oldcard->cis.vendor &&
 			    card->cis.device == oldcard->cis.device);
 		mmc_remove_card(card);
-		if (!same)
-			return -ENOENT;
+		if (!same) {
+			err = -ENOENT;
+			goto err;
+		}
 
 		card = oldcard;
 	}
@@ -829,13 +838,15 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 finish:
 	if (!oldcard)
 		host->card = card;
-	return 0;
+	err = 0;
+	goto err;
 
 remove:
 	if (!oldcard)
 		mmc_remove_card(card);
 
 err:
+	host->host_flag &= ~MMC_FLAG_INIT;
 	return err;
 }
 
@@ -1245,17 +1256,27 @@ int sdio_reset_comm(struct mmc_card *card)
 	printk("%s():\n", __func__);
 	mmc_claim_host(host);
 
+	mmc_set_timing(host, MMC_TIMING_LEGACY);
+	mmc_set_clock(host, host->f_init);
+
+	sdio_reset(host);
 	mmc_go_idle(host);
 
-	mmc_set_clock(host, host->f_min);
+	mmc_send_if_cond(host, host->ocr_avail);
 
 	err = mmc_send_io_op_cond(host, 0, &ocr);
 	if (err)
 		goto err;
 
-	host->ocr = mmc_select_voltage(host, ocr);
+	if (host->ocr_avail_sdio)
+		host->ocr_avail = host->ocr_avail_sdio;
+
+	//host->ocr = mmc_select_voltage(host, ocr);
+	host->ocr = mmc_select_voltage(host, ocr & ~0x7F);
+
 	if (!host->ocr) {
 		err = -EINVAL;
+		printk("%s(): voltage err\n", __func__);
 		goto err;
 	}
 

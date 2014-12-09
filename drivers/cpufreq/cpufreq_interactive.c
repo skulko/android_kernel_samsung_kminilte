@@ -30,12 +30,22 @@
 #include <linux/kthread.h>
 #include <linux/slab.h>
 #include <linux/kernel_stat.h>
+#include <linux/pm_qos.h>
 #include <asm/cputime.h>
+
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+#include <asm/smp_plat.h>
+#include <asm/cputype.h>
+#include <mach/cpufreq.h>
+#endif
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpufreq_interactive.h>
 
 static int active_count;
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+static bool interactive_attr_removed = true;
+#endif
 
 struct cpufreq_interactive_cpuinfo {
 	struct timer_list cpu_timer;
@@ -171,6 +181,9 @@ static void cpufreq_interactive_timer_resched(
 	unsigned long expires;
 	unsigned long flags;
 
+	if (!speedchange_task)
+		return;
+
 	spin_lock_irqsave(&pcpu->load_lock, flags);
 	pcpu->time_in_idle =
 		get_cpu_idle_time(smp_processor_id(),
@@ -197,6 +210,9 @@ static void cpufreq_interactive_timer_start(int cpu)
 	struct cpufreq_interactive_cpuinfo *pcpu = &per_cpu(cpuinfo, cpu);
 	unsigned long expires = jiffies + usecs_to_jiffies(timer_rate);
 	unsigned long flags;
+
+	if (!speedchange_task)
+		return;
 
 	pcpu->cpu_timer.expires = expires;
 	add_timer_on(&pcpu->cpu_timer, cpu);
@@ -493,6 +509,16 @@ static void cpufreq_interactive_idle_start(void)
 		&per_cpu(cpuinfo, smp_processor_id());
 	int pending;
 
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	if (exynos_boot_cluster == CA7) {
+		if (smp_processor_id() >= NR_CA7)
+			return;
+	} else {
+		if (smp_processor_id() < NR_CA15)
+			return;
+	}
+#endif
+
 	if (!down_read_trylock(&pcpu->enable_sem))
 		return;
 	if (!pcpu->governor_enabled) {
@@ -522,6 +548,16 @@ static void cpufreq_interactive_idle_end(void)
 {
 	struct cpufreq_interactive_cpuinfo *pcpu =
 		&per_cpu(cpuinfo, smp_processor_id());
+
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	if (exynos_boot_cluster == CA7) {
+		if (smp_processor_id() >= NR_CA7)
+			return;
+	} else {
+		if (smp_processor_id() < NR_CA15)
+			return;
+	}
+#endif
 
 	if (!down_read_trylock(&pcpu->enable_sem))
 		return;
@@ -556,6 +592,10 @@ static int cpufreq_interactive_speedchange_task(void *data)
 		if (cpumask_empty(&speedchange_cpumask)) {
 			spin_unlock_irqrestore(&speedchange_cpumask_lock,
 					       flags);
+
+			if (kthread_should_stop())
+				break;
+
 			schedule();
 
 			if (kthread_should_stop())
@@ -611,9 +651,22 @@ static void cpufreq_interactive_boost(void)
 	unsigned long flags;
 	struct cpufreq_interactive_cpuinfo *pcpu;
 
+	if (!speedchange_task)
+		return;
+
 	spin_lock_irqsave(&speedchange_cpumask_lock, flags);
 
 	for_each_online_cpu(i) {
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+		if (exynos_boot_cluster == CA7) {
+			if (i >= NR_CA7)
+				continue;
+		} else {
+			if (i < NR_CA15)
+				continue;
+		}
+#endif
+
 		pcpu = &per_cpu(cpuinfo, i);
 
 		if (pcpu->target_freq < hispeed_freq) {
@@ -635,7 +688,7 @@ static void cpufreq_interactive_boost(void)
 
 	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
 
-	if (anyboost)
+	if (anyboost && speedchange_task)
 		wake_up_process(speedchange_task);
 }
 
@@ -646,6 +699,16 @@ static int cpufreq_interactive_notifier(
 	struct cpufreq_interactive_cpuinfo *pcpu;
 	int cpu;
 	unsigned long flags;
+
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	if (exynos_boot_cluster == CA7) {
+		if (freq->cpu >= NR_CA7)
+			return 0;
+	} else {
+		if (freq->cpu < NR_CA15)
+			return 0;
+	}
+#endif
 
 	if (val == CPUFREQ_POSTCHANGE) {
 		pcpu = &per_cpu(cpuinfo, freq->cpu);
@@ -1069,8 +1132,57 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 	unsigned int j;
 	struct cpufreq_interactive_cpuinfo *pcpu;
 	struct cpufreq_frequency_table *freq_table;
+	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	int primary_cpu = 0;
+#endif
+
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	if (exynos_boot_cluster == CA15)
+		primary_cpu = NR_CA15;
+#endif
 
 	switch (event) {
+	case CPUFREQ_GOV_POLICY_INIT:
+#if defined(CONFIG_ARM_EXYNOS_MP_CPUFREQ)
+		if (interactive_attr_removed) {
+			rc = sysfs_create_group(cpufreq_global_kobject,
+					&interactive_attr_group);
+			if (rc)
+				return rc;
+
+			interactive_attr_removed = false;
+		}
+#else
+		rc = sysfs_create_group(cpufreq_global_kobject,
+				&interactive_attr_group);
+		if (rc)
+			return rc;
+#endif
+
+		idle_notifier_register(&cpufreq_interactive_idle_nb);
+		cpufreq_register_notifier(
+			&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
+
+		break;
+
+	case CPUFREQ_GOV_POLICY_EXIT:
+		cpufreq_unregister_notifier(
+			&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
+		idle_notifier_unregister(&cpufreq_interactive_idle_nb);
+
+#if defined(CONFIG_ARM_EXYNOS_MP_CPUFREQ)
+		if (exynos_boot_cluster == CA7) {
+			sysfs_remove_group(cpufreq_global_kobject,
+					&interactive_attr_group);
+			interactive_attr_removed = true;
+		}
+#else
+		sysfs_remove_group(cpufreq_global_kobject,
+				&interactive_attr_group);
+#endif
+		break;
+
 	case CPUFREQ_GOV_START:
 		if (!cpu_online(policy->cpu))
 			return -EINVAL;
@@ -1093,7 +1205,16 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			pcpu->hispeed_validate_time =
 				pcpu->floor_validate_time;
 			down_write(&pcpu->enable_sem);
+#if defined(CONFIG_ARM_EXYNOS_MP_CPUFREQ)
+			if (exynos_boot_cluster != CA7) {
+				if (j == primary_cpu)
+					cpufreq_interactive_timer_start(j);
+			} else {
+				cpufreq_interactive_timer_start(j);
+			}
+#else
 			cpufreq_interactive_timer_start(j);
+#endif
 			pcpu->governor_enabled = 1;
 			up_write(&pcpu->enable_sem);
 		}
@@ -1107,16 +1228,27 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			return 0;
 		}
 
-		rc = sysfs_create_group(cpufreq_global_kobject,
-				&interactive_attr_group);
-		if (rc) {
+		speedchange_task =
+			kthread_create(cpufreq_interactive_speedchange_task, NULL,
+				       "cfinteractive");
+		if (IS_ERR(speedchange_task)) {
 			mutex_unlock(&gov_lock);
-			return rc;
+			return PTR_ERR(speedchange_task);
 		}
 
-		idle_notifier_register(&cpufreq_interactive_idle_nb);
-		cpufreq_register_notifier(
-			&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
+		sched_setscheduler_nocheck(speedchange_task, SCHED_FIFO, &param);
+		get_task_struct(speedchange_task);
+
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+		if (exynos_boot_cluster == CA15)
+			kthread_bind(speedchange_task, NR_CA15);
+		else
+			kthread_bind(speedchange_task, 0);
+#endif
+
+		/* NB: wake up so the thread does not look hung to the freezer */
+		wake_up_process(speedchange_task);
+
 		mutex_unlock(&gov_lock);
 		break;
 
@@ -1136,13 +1268,11 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			return 0;
 		}
 
-		cpufreq_unregister_notifier(
-			&cpufreq_notifier_block, CPUFREQ_TRANSITION_NOTIFIER);
-		idle_notifier_unregister(&cpufreq_interactive_idle_nb);
-		sysfs_remove_group(cpufreq_global_kobject,
-				&interactive_attr_group);
-		mutex_unlock(&gov_lock);
+		kthread_stop(speedchange_task);
+		put_task_struct(speedchange_task);
+		speedchange_task = NULL;
 
+		mutex_unlock(&gov_lock);
 		break;
 
 	case CPUFREQ_GOV_LIMITS:
@@ -1176,7 +1306,16 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			 */
 			del_timer_sync(&pcpu->cpu_timer);
 			del_timer_sync(&pcpu->cpu_slack_timer);
+#if defined(CONFIG_ARM_EXYNOS_MP_CPUFREQ)
+			if (exynos_boot_cluster != CA7) {
+				if (j == primary_cpu)
+					cpufreq_interactive_timer_start(j);
+			} else {
+				cpufreq_interactive_timer_start(j);
+			}
+#else
 			cpufreq_interactive_timer_start(j);
+#endif
 			up_write(&pcpu->enable_sem);
 		}
 		break;
@@ -1188,14 +1327,127 @@ static void cpufreq_interactive_nop_timer(unsigned long data)
 {
 }
 
+unsigned int cpufreq_interactive_get_hispeed_freq(void)
+{
+	struct cpufreq_interactive_cpuinfo *pcpu = &per_cpu(cpuinfo, 0);
+
+	if (pcpu && pcpu->governor_enabled)
+		return hispeed_freq;
+	else
+		return 0;
+}
+
+#ifdef CONFIG_ARCH_EXYNOS
+static int cpufreq_interactive_cpu_min_qos_handler(struct notifier_block *b,
+		unsigned long val, void *v)
+{
+	struct cpufreq_interactive_cpuinfo *pcpu;
+	unsigned long flags;
+	int ret = NOTIFY_OK;
+
+	pcpu = &per_cpu(cpuinfo, 0);
+
+	mutex_lock(&gov_lock);
+	down_read(&pcpu->enable_sem);
+	if (!pcpu->governor_enabled) {
+		up_read(&pcpu->enable_sem);
+		ret = NOTIFY_BAD;
+		goto exit;
+	}
+	up_read(&pcpu->enable_sem);
+
+	if (!pcpu->policy || !pcpu->policy->user_policy.governor) {
+		ret = NOTIFY_BAD;
+		goto exit;
+	}
+
+	trace_cpufreq_interactive_cpu_min_qos(0, val, pcpu->policy->cur);
+
+	if (val < pcpu->policy->cur) {
+		spin_lock_irqsave(&speedchange_cpumask_lock, flags);
+		cpumask_set_cpu(0, &speedchange_cpumask);
+		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
+
+		if (speedchange_task)
+			wake_up_process(speedchange_task);
+	}
+
+exit:
+	mutex_unlock(&gov_lock);
+	return ret;
+}
+
+static struct notifier_block cpufreq_interactive_cpu_min_qos_notifier = {
+	.notifier_call = cpufreq_interactive_cpu_min_qos_handler,
+};
+
+static int cpufreq_interactive_cpu_max_qos_handler(struct notifier_block *b,
+		unsigned long val, void *v)
+{
+	struct cpufreq_interactive_cpuinfo *pcpu;
+	unsigned long flags;
+	int ret = NOTIFY_OK;
+
+	pcpu = &per_cpu(cpuinfo, 0);
+
+	mutex_lock(&gov_lock);
+	down_read(&pcpu->enable_sem);
+	if (!pcpu->governor_enabled) {
+		up_read(&pcpu->enable_sem);
+		ret = NOTIFY_BAD;
+		goto exit;
+	}
+	up_read(&pcpu->enable_sem);
+
+	if (!pcpu->policy || !pcpu->policy->user_policy.governor) {
+		ret = NOTIFY_BAD;
+		goto exit;
+	}
+
+	trace_cpufreq_interactive_cpu_max_qos(0, val, pcpu->policy->cur);
+
+	if (val > pcpu->policy->cur) {
+		spin_lock_irqsave(&speedchange_cpumask_lock, flags);
+		cpumask_set_cpu(0, &speedchange_cpumask);
+		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
+
+		if (speedchange_task)
+			wake_up_process(speedchange_task);
+	}
+
+exit:
+	mutex_unlock(&gov_lock);
+	return ret;
+}
+
+static struct notifier_block cpufreq_interactive_cpu_max_qos_notifier = {
+	.notifier_call = cpufreq_interactive_cpu_max_qos_handler,
+};
+#endif
+
 static int __init cpufreq_interactive_init(void)
 {
 	unsigned int i;
 	struct cpufreq_interactive_cpuinfo *pcpu;
-	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	unsigned int boot_cluster;
+#endif
 
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	/* Get to boot_cluster_num - 0 for CA7; 1 for CA15 */
+	boot_cluster = !MPIDR_AFFINITY_LEVEL(cpu_mpidr_map(0), 1);
+#endif
 	/* Initalize per-cpu timers */
 	for_each_possible_cpu(i) {
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+		if (boot_cluster == CA7) {
+			if (i >= NR_CA7)
+				continue;
+		} else {
+			if (i < NR_CA15)
+				continue;
+		}
+#endif
 		pcpu = &per_cpu(cpuinfo, i);
 		init_timer_deferrable(&pcpu->cpu_timer);
 		pcpu->cpu_timer.function = cpufreq_interactive_timer;
@@ -1210,17 +1462,16 @@ static int __init cpufreq_interactive_init(void)
 	spin_lock_init(&speedchange_cpumask_lock);
 	spin_lock_init(&above_hispeed_delay_lock);
 	mutex_init(&gov_lock);
-	speedchange_task =
-		kthread_create(cpufreq_interactive_speedchange_task, NULL,
-			       "cfinteractive");
-	if (IS_ERR(speedchange_task))
-		return PTR_ERR(speedchange_task);
 
-	sched_setscheduler_nocheck(speedchange_task, SCHED_FIFO, &param);
-	get_task_struct(speedchange_task);
-
-	/* NB: wake up so the thread does not look hung to the freezer */
-	wake_up_process(speedchange_task);
+#ifdef CONFIG_ARCH_EXYNOS
+#ifdef CONFIG_ARM_EXYNOS_MP_CPUFREQ
+	pm_qos_add_notifier(PM_QOS_KFC_FREQ_MIN, &cpufreq_interactive_cpu_min_qos_notifier);
+	pm_qos_add_notifier(PM_QOS_KFC_FREQ_MAX, &cpufreq_interactive_cpu_max_qos_notifier);
+#else
+	pm_qos_add_notifier(PM_QOS_CPU_FREQ_MIN, &cpufreq_interactive_cpu_min_qos_notifier);
+	pm_qos_add_notifier(PM_QOS_CPU_FREQ_MAX, &cpufreq_interactive_cpu_max_qos_notifier);
+#endif
+#endif
 
 	return cpufreq_register_governor(&cpufreq_gov_interactive);
 }
@@ -1234,8 +1485,6 @@ module_init(cpufreq_interactive_init);
 static void __exit cpufreq_interactive_exit(void)
 {
 	cpufreq_unregister_governor(&cpufreq_gov_interactive);
-	kthread_stop(speedchange_task);
-	put_task_struct(speedchange_task);
 }
 
 module_exit(cpufreq_interactive_exit);

@@ -22,6 +22,7 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/regulator/consumer.h>
+#include <linux/delay.h>
 
 #include <plat/regs-adc.h>
 #include <plat/adc.h>
@@ -46,6 +47,7 @@ enum s3c_cpu_type {
 	TYPE_ADCV2, /* S3C64XX, S5P64X0, S5PC100 */
 	TYPE_ADCV3, /* S5PV210, S5PC110, EXYNOS4210 */
 	TYPE_ADCV4, /* EXYNOS4412, EXYNOS5250 */
+	TYPE_ADCV5, /* EXYNOS5410 */
 };
 
 struct s3c_adc_client {
@@ -73,11 +75,9 @@ struct adc_device {
 	void __iomem		*regs;
 	spinlock_t		 lock;
 
-	unsigned int		 prescale;
-	unsigned int		 delay;
-
 	int			 irq;
 	struct regulator	*vdd;
+	int			clk_cnt;
 };
 
 static struct adc_device *adc_dev;
@@ -86,53 +86,88 @@ static LIST_HEAD(adc_pending);	/* protected by adc_device.lock */
 
 #define adc_dbg(_adc, msg...) dev_dbg(&(_adc)->pdev->dev, msg)
 
+static void s3c_adc_hw_enable(struct adc_device *adc);
+static void s3c_adc_hw_disable(struct adc_device *adc);
+
 static inline void s3c_adc_convert(struct adc_device *adc)
 {
-	unsigned con = readl(adc->regs + S3C2410_ADCCON);
+	enum s3c_cpu_type cpu = platform_get_device_id(adc->pdev)->driver_data;
+	unsigned con;
 
-	con |= S3C2410_ADCCON_ENABLE_START;
-	writel(con, adc->regs + S3C2410_ADCCON);
+	if (cpu != TYPE_ADCV5) {
+		con = readl(adc->regs + S3C2410_ADCCON);
+		con |= S3C2410_ADCCON_ENABLE_START;
+		writel(con, adc->regs + S3C2410_ADCCON);
+	} else {
+		con = readl(adc->regs + SAMSUNG_ADC2_CON1);
+		con |= SAMSUNG_ADC2_CON1_STC_EN;
+		writel(con, adc->regs + SAMSUNG_ADC2_CON1);
+	}
 }
 
 static inline void s3c_adc_select(struct adc_device *adc,
 				  struct s3c_adc_client *client)
 {
-	unsigned con = readl(adc->regs + S3C2410_ADCCON);
 	enum s3c_cpu_type cpu = platform_get_device_id(adc->pdev)->driver_data;
+	unsigned con;
 
 	client->select_cb(client, 1);
 
-	if (cpu == TYPE_ADCV1 || cpu == TYPE_ADCV2)
-		con &= ~S3C2410_ADCCON_MUXMASK;
-	con &= ~S3C2410_ADCCON_STDBM;
-	con &= ~S3C2410_ADCCON_STARTMASK;
-	con |=  S3C2410_ADCCON_PRSCEN;
+	if (cpu != TYPE_ADCV5) {
+		con = readl(adc->regs + S3C2410_ADCCON);
 
-	if (!client->is_ts) {
-		if (cpu == TYPE_ADCV3 || cpu == TYPE_ADCV4)
-			writel(client->channel & 0xf, adc->regs + S5P_ADCMUX);
-		else if (cpu == TYPE_ADCV11 || cpu == TYPE_ADCV12)
-			writel(client->channel & 0xf,
-						adc->regs + S3C2443_ADCMUX);
-		else
-			con |= S3C2410_ADCCON_SELMUX(client->channel);
+		if (cpu == TYPE_ADCV1 || cpu == TYPE_ADCV2)
+			con &= ~S3C2410_ADCCON_MUXMASK;
+		con &= ~S3C2410_ADCCON_STDBM;
+		con &= ~S3C2410_ADCCON_STARTMASK;
+		con |=  S3C2410_ADCCON_PRSCEN;
+
+		if (!client->is_ts) {
+			if (cpu == TYPE_ADCV3 || cpu == TYPE_ADCV4)
+				writel(client->channel & 0xf,
+				       adc->regs + S5P_ADCMUX);
+			else if (cpu == TYPE_ADCV11 || cpu == TYPE_ADCV12)
+				writel(client->channel & 0xf,
+				       adc->regs + S3C2443_ADCMUX);
+			else
+				con |= S3C2410_ADCCON_SELMUX(client->channel);
+		}
+
+		writel(con, adc->regs + S3C2410_ADCCON);
+	} else {
+		con = readl(adc->regs + SAMSUNG_ADC2_CON2);
+		con &= ~SAMSUNG_ADC2_CON2_ACH_MASK;
+		con |= SAMSUNG_ADC2_CON2_ACH_SEL(client->channel);
+		writel(con, adc->regs + SAMSUNG_ADC2_CON2);
 	}
 
-	writel(con, adc->regs + S3C2410_ADCCON);
 }
 
 static void s3c_adc_dbgshow(struct adc_device *adc)
 {
-	adc_dbg(adc, "CON=%08x, TSC=%08x, DLY=%08x\n",
-		readl(adc->regs + S3C2410_ADCCON),
-		readl(adc->regs + S3C2410_ADCTSC),
-		readl(adc->regs + S3C2410_ADCDLY));
+	enum s3c_cpu_type cpu = platform_get_device_id(adc->pdev)->driver_data;
+
+	if (cpu == TYPE_ADCV5) {
+		adc_dbg(adc, "CON1=%08x, CON2=%08x\n",
+			readl(adc->regs + SAMSUNG_ADC2_CON1),
+			readl(adc->regs + SAMSUNG_ADC2_CON2));
+	} else if (cpu == TYPE_ADCV4) {
+		adc_dbg(adc, "CON=%08x, DLY=%08x\n",
+			readl(adc->regs + S3C2410_ADCCON),
+			readl(adc->regs + S3C2410_ADCDLY));
+	} else {
+		adc_dbg(adc, "CON=%08x, TSC=%08x, DLY=%08x\n",
+			readl(adc->regs + S3C2410_ADCCON),
+			readl(adc->regs + S3C2410_ADCTSC),
+			readl(adc->regs + S3C2410_ADCDLY));
+	}
 }
 
 static void s3c_adc_try(struct adc_device *adc)
 {
 	struct s3c_adc_client *next = adc->ts_pend;
-	unsigned int con = readl(adc->regs + S3C2410_ADCCON);
+	enum s3c_cpu_type cpu = platform_get_device_id(adc->pdev)->driver_data;
+	unsigned int con;
 
 	if (!next && !list_empty(&adc_pending)) {
 		next = list_first_entry(&adc_pending,
@@ -148,9 +183,12 @@ static void s3c_adc_try(struct adc_device *adc)
 		s3c_adc_convert(adc);
 		s3c_adc_dbgshow(adc);
 	} else {
-		con &= ~S3C2410_ADCCON_PRSCEN;
-		con |=  S3C2410_ADCCON_STDBM;
-		writel(con, adc->regs + S3C2410_ADCCON);
+		if (cpu != TYPE_ADCV5) {
+			con = readl(adc->regs + S3C2410_ADCCON);
+			con &= ~S3C2410_ADCCON_PRSCEN;
+			con |=  S3C2410_ADCCON_STDBM;
+			writel(con, adc->regs + S3C2410_ADCCON);
+		}
 	}
 }
 
@@ -159,6 +197,7 @@ int s3c_adc_start(struct s3c_adc_client *client,
 {
 	struct adc_device *adc = adc_dev;
 	unsigned long flags;
+	DECLARE_WAIT_QUEUE_HEAD_ONSTACK(wake);
 
 	if (!adc) {
 		printk(KERN_ERR "%s: failed to find adc\n", __func__);
@@ -168,11 +207,18 @@ int s3c_adc_start(struct s3c_adc_client *client,
 	if (nr_samples == 0)
 		return -EINVAL;
 
+retry:
 	spin_lock_irqsave(&adc->lock, flags);
 
 	if (client->is_ts && adc->ts_pend) {
 		spin_unlock_irqrestore(&adc->lock, flags);
 		return -EAGAIN;
+	}
+
+	if (!list_empty(&client->pend)) {
+		spin_unlock_irqrestore(&adc->lock, flags);
+		usleep_range(250, 500);
+		goto retry;
 	}
 
 	client->channel = channel;
@@ -199,18 +245,21 @@ static void s3c_adc_stop(struct s3c_adc_client *client)
 	spin_lock_irqsave(&adc_dev->lock, flags);
 
 	/* We should really check that nothing is in progress. */
-	if (adc_dev->cur == client)
+	if (adc_dev->cur == client) {
 		adc_dev->cur = NULL;
-	if (adc_dev->ts_pend == client)
+		INIT_LIST_HEAD(&client->pend);
+	}
+
+	if (adc_dev->ts_pend == client) {
 		adc_dev->ts_pend = NULL;
-	else {
+	} else {
 		struct list_head *p, *n;
 		struct s3c_adc_client *tmp;
 
 		list_for_each_safe(p, n, &adc_pending) {
 			tmp = list_entry(p, struct s3c_adc_client, pend);
 			if (tmp == client)
-				list_del(&tmp->pend);
+				list_del_init(&tmp->pend);
 		}
 	}
 
@@ -261,6 +310,8 @@ int s3c_adc_read(struct s3c_adc_client *client, unsigned int ch)
 	client->result = -1;
 	spin_unlock_irqrestore(&adc_dev->lock, flags);
 
+	s3c_adc_hw_enable(adc_dev);
+
 	ret = s3c_adc_start(client, ch, 1);
 	if (ret < 0)
 		goto exit;
@@ -280,6 +331,8 @@ exit:
 	 * a pointer to the client anymore.
 	 */
 	client->convert_cb = NULL;
+
+	s3c_adc_hw_disable(adc_dev);
 
 	return ret;
 }
@@ -318,6 +371,7 @@ struct s3c_adc_client *s3c_adc_register(struct platform_device *pdev,
 	client->is_ts = is_ts;
 	client->select_cb = select;
 	client->convert_cb = conv;
+	INIT_LIST_HEAD(&client->pend);
 
 	return client;
 }
@@ -325,8 +379,10 @@ EXPORT_SYMBOL_GPL(s3c_adc_register);
 
 void s3c_adc_release(struct s3c_adc_client *client)
 {
+	s3c_adc_hw_enable(adc_dev);
 	s3c_adc_stop(client);
 	kfree(client);
+	s3c_adc_hw_disable(adc_dev);
 }
 EXPORT_SYMBOL_GPL(s3c_adc_release);
 
@@ -350,10 +406,14 @@ static irqreturn_t s3c_adc_irq(int irq, void *pw)
 		goto exit;
 	}
 
-	data0 = readl(adc->regs + S3C2410_ADCDAT0);
 	if (cpu == TYPE_ADCV4) {
+		data0 = readl(adc->regs + S3C2410_ADCDAT0);
+		adc_dbg(adc, "read %d: 0x%04x\n", client->nr_samples, data0);
+	} else if (cpu == TYPE_ADCV5) {
+		data0 = readl(adc->regs + SAMSUNG_ADC2_DAT);
 		adc_dbg(adc, "read %d: 0x%04x\n", client->nr_samples, data0);
 	} else {
+		data0 = readl(adc->regs + S3C2410_ADCDAT0);
 		data1 = readl(adc->regs + S3C2410_ADCDAT1);
 		adc_dbg(adc, "read %d: 0x%04x, 0x%04x\n", client->nr_samples,
 			data0, data1);
@@ -381,16 +441,116 @@ static irqreturn_t s3c_adc_irq(int irq, void *pw)
 	} else {
 		client->select_cb(client, 0);
 		adc->cur = NULL;
+		INIT_LIST_HEAD(&client->pend);
 		s3c_adc_try(adc);
 	}
 	spin_unlock(&adc->lock);
 
 exit:
-	if (cpu == TYPE_ADCV2 || cpu == TYPE_ADCV3 || cpu == TYPE_ADCV4) {
-		/* Clear ADC interrupt */
+	/* Clear ADC interrupt */
+	if (cpu == TYPE_ADCV2 || cpu == TYPE_ADCV3 || cpu == TYPE_ADCV4)
 		writel(0, adc->regs + S3C64XX_ADCCLRINT);
-	}
+	else if (cpu == TYPE_ADCV5)
+		writel(1, adc->regs + SAMSUNG_ADC2_INT_STATUS);
+
 	return IRQ_HANDLED;
+}
+
+static void s3c_adc_hw_init(struct adc_device *adc)
+{
+	enum s3c_cpu_type cpu = platform_get_device_id(adc->pdev)->driver_data;
+	unsigned long value;
+
+	if (cpu != TYPE_ADCV5) {
+		value =  S3C2410_ADCCON_PRSCVL(49) | S3C2410_ADCCON_PRSCEN;
+
+		/* Enable 12-bit ADC resolution */
+		if (cpu == TYPE_ADCV12)
+			value |= S3C2416_ADCCON_RESSEL;
+		else if (cpu == TYPE_ADCV2 || cpu == TYPE_ADCV3 ||
+			 cpu == TYPE_ADCV4)
+			value |= S3C64XX_ADCCON_RESSEL;
+
+		value |= S3C2410_ADCCON_STDBM;
+		writel(value, adc->regs + S3C2410_ADCCON);
+
+		writel(S3C2410_ADCDLY_DELAY(1000), adc->regs + S3C2410_ADCDLY);
+	} else {
+		value = SAMSUNG_ADC2_CON1_SOFT_RESET;
+		writel(value, adc->regs + SAMSUNG_ADC2_CON1);
+		/* add wait for 25 PCLK */
+		udelay(1);
+
+		value = SAMSUNG_ADC2_CON2_OSEL | SAMSUNG_ADC2_CON2_ESEL |
+			SAMSUNG_ADC2_CON2_HIGHF | SAMSUNG_ADC2_CON2_C_TIME(0);
+		writel(value, adc->regs + SAMSUNG_ADC2_CON2);
+
+		writel(1, adc->regs + SAMSUNG_ADC2_INT_EN);
+	}
+}
+
+static void s3c_adc_hw_deinit(struct adc_device *adc)
+{
+	enum s3c_cpu_type cpu = platform_get_device_id(adc->pdev)->driver_data;
+	unsigned long value;
+
+	if (cpu != TYPE_ADCV5) {
+		value = readl(adc->regs + S3C2410_ADCCON);
+		value |= S3C2410_ADCCON_STDBM;
+		writel(value, adc->regs + S3C2410_ADCCON);
+	} else {
+		value = readl(adc->regs + SAMSUNG_ADC2_CON1);
+		value &= ~SAMSUNG_ADC2_CON1_STC_EN;
+		writel(value, adc->regs + SAMSUNG_ADC2_CON1);
+
+		value = readl(adc->regs + SAMSUNG_ADC2_CON2);
+		value &= ~(SAMSUNG_ADC2_CON2_OSEL | SAMSUNG_ADC2_CON2_ESEL |
+			SAMSUNG_ADC2_CON2_HIGHF | SAMSUNG_ADC2_CON2_C_TIME(0));
+		writel(value, adc->regs + SAMSUNG_ADC2_CON2);
+		writel(0, adc->regs + SAMSUNG_ADC2_INT_EN);
+	}
+}
+
+static void s3c_adc_hw_disable(struct adc_device *adc)
+{
+	struct s3c_adc_platdata *pdata = adc->pdev->dev.platform_data;
+	unsigned long flags;
+
+	spin_lock_irqsave(&adc->lock, flags);
+
+	adc->clk_cnt--;
+
+	s3c_adc_hw_deinit(adc);
+	clk_disable(adc->clk);
+
+	if (pdata != NULL && pdata->phy_init != NULL && adc->clk_cnt == 0)
+		pdata->phy_exit();
+
+	if (adc->vdd)
+		regulator_disable(adc->vdd);
+
+	spin_unlock_irqrestore(&adc->lock, flags);
+}
+
+static void s3c_adc_hw_enable(struct adc_device *adc)
+{
+	struct s3c_adc_platdata *pdata = adc->pdev->dev.platform_data;
+	unsigned long flags;
+
+	spin_lock_irqsave(&adc->lock, flags);
+
+	adc->clk_cnt++;
+
+	if (adc->vdd)
+		regulator_enable(adc->vdd);
+
+	if (pdata != NULL && pdata->phy_init != NULL && adc->clk_cnt > 0)
+		pdata->phy_init();
+
+	clk_enable(adc->clk);
+	s3c_adc_hw_init(adc);
+
+	spin_unlock_irqrestore(&adc->lock, flags);
 }
 
 static int s3c_adc_probe(struct platform_device *pdev)
@@ -399,9 +559,7 @@ static int s3c_adc_probe(struct platform_device *pdev)
 	struct adc_device *adc;
 	struct s3c_adc_platdata *pdata;
 	struct resource *regs;
-	enum s3c_cpu_type cpu = platform_get_device_id(pdev)->driver_data;
 	int ret;
-	unsigned tmp;
 
 	adc = kzalloc(sizeof(struct adc_device), GFP_KERNEL);
 	if (adc == NULL) {
@@ -412,8 +570,6 @@ static int s3c_adc_probe(struct platform_device *pdev)
 	spin_lock_init(&adc->lock);
 
 	adc->pdev = pdev;
-	adc->prescale = S3C2410_ADCCON_PRSCVL(49);
-	adc->delay = S3C2410_ADCDLY_DELAY(1000);
 
 	adc->vdd = regulator_get(dev, "vdd");
 	if (IS_ERR(adc->vdd)) {
@@ -421,16 +577,17 @@ static int s3c_adc_probe(struct platform_device *pdev)
 		adc->vdd = NULL;
 	}
 
-	adc->irq = platform_get_irq_byname(pdev, "samsung-adc");
-	if (adc->irq <= 0) {
-		dev_err(dev, "failed to get adc irq\n");
-		ret = -ENOENT;
+	regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!regs) {
+		dev_err(dev, "failed to find registers\n");
+		ret = -ENXIO;
 		goto err_reg;
 	}
 
-	ret = request_irq(adc->irq, s3c_adc_irq, 0, dev_name(dev), adc);
-	if (ret < 0) {
-		dev_err(dev, "failed to attach adc irq\n");
+	adc->regs = ioremap(regs->start, resource_size(regs));
+	if (!adc->regs) {
+		dev_err(dev, "failed to map registers\n");
+		ret = -ENXIO;
 		goto err_reg;
 	}
 
@@ -438,61 +595,37 @@ static int s3c_adc_probe(struct platform_device *pdev)
 	if (IS_ERR(adc->clk)) {
 		dev_err(dev, "failed to get adc clock\n");
 		ret = PTR_ERR(adc->clk);
-		goto err_irq;
+		goto err_ioremap;
 	}
-
-	regs = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!regs) {
-		dev_err(dev, "failed to find registers\n");
-		ret = -ENXIO;
-		goto err_clk;
-	}
-
-	adc->regs = ioremap(regs->start, resource_size(regs));
-	if (!adc->regs) {
-		dev_err(dev, "failed to map registers\n");
-		ret = -ENXIO;
-		goto err_clk;
-	}
-
-	if (adc->vdd) {
-		ret = regulator_enable(adc->vdd);
-		if (ret)
-			goto err_ioremap;
-	}
-
-	clk_enable(adc->clk);
 
 	pdata = pdev->dev.platform_data;
-	if (pdata != NULL && pdata->phy_init != NULL)
-		pdata->phy_init();
+	platform_set_drvdata(pdev, adc);
 
-	tmp = adc->prescale | S3C2410_ADCCON_PRSCEN;
+	adc->clk_cnt = 0;
 
-	/* Enable 12-bit ADC resolution */
-	if (cpu == TYPE_ADCV12)
-		tmp |= S3C2416_ADCCON_RESSEL;
-	else if (cpu == TYPE_ADCV2 || cpu == TYPE_ADCV3 || cpu == TYPE_ADCV4)
-		tmp |= S3C64XX_ADCCON_RESSEL;
+	adc->irq = platform_get_irq_byname(pdev, "samsung-adc");
+	if (adc->irq <= 0) {
+		dev_err(dev, "failed to get adc irq\n");
+		ret = -ENOENT;
+		goto err_clk;
+	}
 
-	tmp |= S3C2410_ADCCON_STDBM;
-	writel(tmp, adc->regs + S3C2410_ADCCON);
-	writel(adc->delay, adc->regs + S3C2410_ADCDLY);
+	ret = request_irq(adc->irq, s3c_adc_irq, 0, dev_name(dev), adc);
+	if (ret < 0) {
+		dev_err(dev, "failed to attach adc irq\n");
+		goto err_clk;
+	}
 
 	dev_info(dev, "attached adc driver\n");
 
-	platform_set_drvdata(pdev, adc);
 	adc_dev = adc;
 
 	return 0;
 
- err_ioremap:
-	iounmap(adc->regs);
  err_clk:
 	clk_put(adc->clk);
-
- err_irq:
-	free_irq(adc->irq, adc);
+ err_ioremap:
+	iounmap(adc->regs);
  err_reg:
 	if (adc->vdd)
 		regulator_put(adc->vdd);
@@ -504,78 +637,16 @@ static int __devexit s3c_adc_remove(struct platform_device *pdev)
 {
 	struct adc_device *adc = platform_get_drvdata(pdev);
 
-	iounmap(adc->regs);
 	free_irq(adc->irq, adc);
-	clk_disable(adc->clk);
-	if (adc->vdd) {
-		regulator_disable(adc->vdd);
+	iounmap(adc->regs);
+	if (adc->vdd)
 		regulator_put(adc->vdd);
-	}
+
 	clk_put(adc->clk);
 	kfree(adc);
 
 	return 0;
 }
-
-#ifdef CONFIG_PM
-static int s3c_adc_suspend(struct device *dev)
-{
-	struct platform_device *pdev = container_of(dev,
-			struct platform_device, dev);
-	struct adc_device *adc = platform_get_drvdata(pdev);
-	unsigned long flags;
-	u32 con;
-
-	spin_lock_irqsave(&adc->lock, flags);
-
-	con = readl(adc->regs + S3C2410_ADCCON);
-	con |= S3C2410_ADCCON_STDBM;
-	writel(con, adc->regs + S3C2410_ADCCON);
-
-	disable_irq(adc->irq);
-	spin_unlock_irqrestore(&adc->lock, flags);
-	clk_disable(adc->clk);
-	if (adc->vdd)
-		regulator_disable(adc->vdd);
-
-	return 0;
-}
-
-static int s3c_adc_resume(struct device *dev)
-{
-	struct platform_device *pdev = container_of(dev,
-			struct platform_device, dev);
-	struct adc_device *adc = platform_get_drvdata(pdev);
-	enum s3c_cpu_type cpu = platform_get_device_id(pdev)->driver_data;
-	int ret;
-	unsigned long tmp;
-
-	if (adc->vdd) {
-		ret = regulator_enable(adc->vdd);
-		if (ret)
-			return ret;
-	}
-	clk_enable(adc->clk);
-	enable_irq(adc->irq);
-
-	tmp = adc->prescale | S3C2410_ADCCON_PRSCEN;
-
-	/* Enable 12-bit ADC resolution */
-	if (cpu == TYPE_ADCV12)
-		tmp |= S3C2416_ADCCON_RESSEL;
-	if (cpu == TYPE_ADCV2 || cpu == TYPE_ADCV3 || cpu == TYPE_ADCV4)
-		tmp |= S3C64XX_ADCCON_RESSEL;
-
-	writel(tmp, adc->regs + S3C2410_ADCCON);
-	writel(adc->delay, adc->regs + S3C2410_ADCDLY);
-
-	return 0;
-}
-
-#else
-#define s3c_adc_suspend NULL
-#define s3c_adc_resume NULL
-#endif
 
 static struct platform_device_id s3c_adc_driver_ids[] = {
 	{
@@ -596,22 +667,19 @@ static struct platform_device_id s3c_adc_driver_ids[] = {
 	}, {
 		.name		= "samsung-adc-v4",
 		.driver_data	= TYPE_ADCV4,
+	}, {
+		.name		= "samsung-adc-v5",
+		.driver_data	= TYPE_ADCV5,
 	},
 	{ }
 };
 MODULE_DEVICE_TABLE(platform, s3c_adc_driver_ids);
-
-static const struct dev_pm_ops adc_pm_ops = {
-	.suspend	= s3c_adc_suspend,
-	.resume		= s3c_adc_resume,
-};
 
 static struct platform_driver s3c_adc_driver = {
 	.id_table	= s3c_adc_driver_ids,
 	.driver		= {
 		.name	= "s3c-adc",
 		.owner	= THIS_MODULE,
-		.pm	= &adc_pm_ops,
 	},
 	.probe		= s3c_adc_probe,
 	.remove		= __devexit_p(s3c_adc_remove),

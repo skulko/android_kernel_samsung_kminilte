@@ -294,6 +294,24 @@ config CRYPTO_S5P_DEV_ACE
 	  Use ACE for AES (ECB, CBC, CTR) and SHA1/SHA256.
 	  Available in EXYNOS4/S5PV210/S5PC110 and newer CPUs.
 
+choice
+	prompt "H/W Version"
+	default ACE_USE_SLIMSSS_VER_1
+
+config ACE_USE_SSS_VER_4
+	bool "SSS v4.x"
+	depends on CRYPTO_S5P_DEV_ACE && ARCH_S5PV210
+
+config ACE_USE_SSS_VER_5
+	bool "SSS v5.x"
+	depends on CRYPTO_S5P_DEV_ACE && !ARCH_S5PV210
+
+config ACE_USE_SLIMSSS_VER_1
+	bool "SlimSSS v1.x"
+	depends on CRYPTO_S5P_DEV_ACE && (SOC_EXYNOS5420 || SOC_EXYNOS5260)
+
+endchoice
+
 config ACE_BC
 	bool "Support for AES block cipher (ECB, CBC, CTR mode)"
 	depends on CRYPTO_S5P_DEV_ACE
@@ -327,7 +345,7 @@ config ACE_HASH_SHA1
 
 config ACE_HASH_SHA256
 	bool "Support for SHA256 hash algorithm"
-	depends on CRYPTO_S5P_DEV_ACE && ARCH_EXYNOS4
+	depends on CRYPTO_S5P_DEV_ACE && ARCH_EXYNOS
 	select CRYPTO_HASH
 	select CRYPTO_SHA256
 	default y

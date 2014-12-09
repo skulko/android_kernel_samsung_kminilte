@@ -71,6 +71,9 @@ enum MFC_SHM_OFS {
 	FRAME_PACK_SEI_ENABLE	= 0x168, /* C */
 	FRAME_PACK_SEI_AVAIL	= 0x16c, /* D */
 	FRAME_PACK_SEI_INFO	= 0x17c, /* E */
+
+	DYNAMIC_DPB_FLAG	= 0x1bc,
+	USED_DPB_FLAG		= 0x1c0,
 };
 
 #define S5P_FIMV_DISPLAY_FRAME_NOT_CODED	0
@@ -83,12 +86,10 @@ int s5p_mfc_init_shm(struct s5p_mfc_ctx *ctx);
 static inline void s5p_mfc_write_shm(struct s5p_mfc_ctx *ctx, unsigned int data, unsigned int ofs)
 {
 	writel(data, (ctx->shm.virt + ofs));
-	s5p_mfc_cache_clean_priv(ctx->shm.alloc);
 }
 
 static inline u32 s5p_mfc_read_shm(struct s5p_mfc_ctx *ctx, unsigned int ofs)
 {
-	s5p_mfc_cache_inv_priv(ctx->shm.alloc);
 	return readl(ctx->shm.virt + ofs);
 }
 

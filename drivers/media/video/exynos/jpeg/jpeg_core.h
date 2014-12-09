@@ -1,6 +1,6 @@
-/* linux/drivers/media/video/samsung/jpeg_v2x/jpeg_core.h
+/* linux/drivers/media/video/exynos/jpeg/jpeg_core.h
  *
- * Copyright (c) 2012 Samsung Electronics Co., Ltd.
+ * Copyright (c) 2012~2013 Samsung Electronics Co., Ltd.
  * http://www.samsung.com/
  *
  * Definition for core file of the jpeg operation.
@@ -32,6 +32,9 @@
 #include "jpeg_mem.h"
 
 #define INT_TIMEOUT		1000
+#define DCTSIZE			16
+#define NUM_QUANT_TBLS		2
+#define NUM_HUFF_TBLS		2
 
 #define JPEG_NUM_INST		4
 #define JPEG_MAX_PLANE		3
@@ -63,7 +66,9 @@ enum  jpeg_img_quality_level {
 	QUALITY_LEVEL_1 = 0,	/* high */
 	QUALITY_LEVEL_2,
 	QUALITY_LEVEL_3,
-	QUALITY_LEVEL_4,	/* low */
+	QUALITY_LEVEL_4,
+	QUALITY_LEVEL_5,
+	QUALITY_LEVEL_6,	/* low */
 };
 
 /* raw data image format */
@@ -88,10 +93,7 @@ enum jpeg_frame_format {
 	RGB_888,
 	BGR_888,
 	GRAY,
-};
-
 /* jpeg data format */
-enum jpeg_stream_format {
 	JPEG_422,	/* decode input, encode output */
 	JPEG_420,	/* decode input, encode output */
 	JPEG_444,	/* decode input*/
@@ -138,7 +140,7 @@ struct jpeg_dec_param {
 	unsigned int in_depth;
 	unsigned int out_depth[JPEG_MAX_PLANE];
 
-	enum jpeg_stream_format in_fmt;
+	enum jpeg_frame_format in_fmt;
 	enum jpeg_frame_format out_fmt;
 };
 
@@ -154,7 +156,7 @@ struct jpeg_enc_param {
 	unsigned int out_depth;
 
 	enum jpeg_frame_format in_fmt;
-	enum jpeg_stream_format out_fmt;
+	enum jpeg_frame_format out_fmt;
 	enum jpeg_img_quality_level quality;
 };
 
@@ -170,8 +172,6 @@ struct jpeg_ctx {
 
 	int			index;
 	unsigned long		payload[VIDEO_MAX_PLANES];
-	bool			input_cacheable;
-	bool			output_cacheable;
 };
 
 struct jpeg_vb2 {
@@ -184,8 +184,9 @@ struct jpeg_vb2 {
 	int (*resume)(void *alloc_ctx);
 	void (*suspend)(void *alloc_ctx);
 
-	int (*cache_flush)(struct vb2_buffer *vb, u32 num_planes);
 	void (*set_cacheable)(void *alloc_ctx, bool cacheable);
+	int (*buf_prepare)(struct vb2_buffer *vb);
+	int (*buf_finish)(struct vb2_buffer *vb);
 };
 
 struct jpeg_dev {
@@ -201,6 +202,7 @@ struct jpeg_dev {
 	struct platform_device	*plat_dev;
 
 	struct clk		*clk;
+	struct clk		*sclk_clk;
 
 	struct mutex		lock;
 

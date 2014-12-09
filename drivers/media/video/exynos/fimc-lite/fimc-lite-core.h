@@ -20,15 +20,14 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/pm_runtime.h>
+#include <linux/pm_qos.h>
 #include <media/videobuf2-core.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-mediabus.h>
 #include <media/exynos_flite.h>
 #include <media/v4l2-ioctl.h>
-#ifdef CONFIG_ARCH_EXYNOS5
 #include <media/exynos_mc.h>
-#endif
 
 #if defined(CONFIG_VIDEOBUF2_CMA_PHYS)
 #include <media/videobuf2-cma-phys.h>
@@ -54,11 +53,28 @@
 #endif
 
 #define FLITE_MAX_RESET_READY_TIME	20 /* 100ms */
-#define FLITE_MAX_CTRL_NUM		1
-#define FLITE_MAX_OUT_BUFS		1
+#ifdef CONFIG_VIDEO_SAMSUNG_EXT_CAMERA
+#define FLITE_MAX_CTRL_NUM_EXT		9
+#define FLITE_MAX_CTRL_NUM		(25 + FLITE_MAX_CTRL_NUM_EXT)
+#else
+#define FLITE_MAX_CTRL_NUM		27
+#endif
+#define FLITE_CLK_NAME_SIZE		20
+#define FLITE_MAX_OUT_BUFS 		flite->reqbufs_cnt
 #ifdef CONFIG_ARCH_EXYNOS4
 #define FLITE_MAX_MBUS_NUM		1
 #endif
+
+/* config */
+#ifdef CONFIG_SOC_EXYNOS4415
+#define USE_FLITEB_CSISA
+#endif
+
+enum flite_b_csis_source {
+	FLITE_SRC_CSIS_B = 0,
+	FLITE_SRC_CSIS_A = 1,
+};
+
 enum flite_input_entity {
 	FLITE_INPUT_NONE,
 	FLITE_INPUT_SENSOR,
@@ -164,10 +180,50 @@ struct flite_sensor_info {
 	struct exynos_isp_info *pdata;
 	struct v4l2_subdev *sd;
 	struct clk *camclk;
+	void (*priv_ops)(void *data, int arg);
 };
 
 struct flite_ctrls {
 	struct v4l2_ctrl	*cacheable;
+	struct v4l2_ctrl	*scenemode;
+	struct v4l2_ctrl	*focusmode;
+	struct v4l2_ctrl	*whitebalance;
+	struct v4l2_ctrl	*effect;
+	struct v4l2_ctrl	*iso;
+	struct v4l2_ctrl	*contrast;
+	struct v4l2_ctrl	*saturation;
+	struct v4l2_ctrl	*sharpness;
+	struct v4l2_ctrl	*brightness;
+	struct v4l2_ctrl	*metering;
+	struct v4l2_ctrl	*start_capture;
+	struct v4l2_ctrl	*framerate;
+	struct v4l2_ctrl	*autofocus;
+	struct v4l2_ctrl	*obj_position_x;
+	struct v4l2_ctrl	*obj_position_y;
+	struct v4l2_ctrl	*face_detection;
+	struct v4l2_ctrl	*wdr;
+	struct v4l2_ctrl	*autofocus_result;
+	struct v4l2_ctrl	*jpeg_quality;
+	struct v4l2_ctrl	*exif_iso;
+	struct v4l2_ctrl	*exif_shutterspeed;
+	struct v4l2_ctrl	*aeawb_lockunlock;
+	struct v4l2_ctrl	*caf_startstop;
+	struct v4l2_ctrl	*digital_zoom;
+#ifdef CONFIG_VIDEO_SAMSUNG_EXT_CAMERA
+	struct v4l2_ctrl	*vt_mode;
+	struct v4l2_ctrl	*sensor_mode;
+	struct v4l2_ctrl	*touch_af_startstop;
+	struct v4l2_ctrl	*flash_mode;
+	struct v4l2_ctrl	*antishake;
+	struct v4l2_ctrl	*check_esd;
+	struct v4l2_ctrl	*antibanding;
+	struct v4l2_ctrl	*exif_exptime;
+	struct v4l2_ctrl	*exif_flash;
+	struct v4l2_ctrl	*reset;
+#else
+	struct v4l2_ctrl	*flash_mode;
+	struct v4l2_ctrl	*single_af;
+#endif
 };
 /**
   * struct flite_dev - top structure of FIMC-Lite device
@@ -183,7 +239,7 @@ struct flite_dev {
 	struct exynos_platform_flite	*pdata; /* depended on isp */
 	spinlock_t			slock;
 	struct v4l2_subdev		*sd_flite;
-#if defined(CONFIG_MEDIA_CONTROLLER) && defined(CONFIG_ARCH_EXYNOS5)
+#if defined(CONFIG_MEDIA_CONTROLLER)
 	struct exynos_md		*mdev;
 	struct v4l2_subdev		*sd_csis;
 	struct flite_sensor_info	sensor[SENSOR_MAX_ENTITIES];
@@ -206,8 +262,9 @@ struct flite_dev {
 	int				active_buf_cnt;
 	int				pending_buf_cnt;
 	int				buf_index;
-	struct clk			*gsc_clk;
+	struct clk			*flite_clk;
 	struct clk			*camif_clk;
+	bool				sysmmu_attached;
 #endif
 	struct v4l2_mbus_framefmt	mbus_fmt;
 	struct flite_frame		s_frame;
@@ -220,6 +277,16 @@ struct flite_dev {
 	u32				id;
 	enum flite_input_entity		input;
 	enum flite_output_entity	output;
+
+	struct pm_qos_request	 	mif_qos;
+	int				qos_lock_value;
+	int				frame_rate;
+	u32				ovf_cnt;
+
+#ifdef CONFIG_VIDEO_SAMSUNG_EXT_CAMERA	
+	int				dbg_irq_cnt;
+	int				cap_mode;
+#endif
 };
 
 struct flite_vb2 {
@@ -243,12 +310,19 @@ struct flite_buffer {
 	struct flite_addr	paddr;
 	int			index;
 };
+
 /* fimc-reg.c */
+void flite_hw_clr_ovf_indication(struct flite_dev *dev);
+void flite_hw_set_ovf_interrupt_source(struct flite_dev *dev);
+void flite_hw_clr_ovf_interrupt_source(struct flite_dev *dev);
+int flite_hw_check_ovf_interrupt_source(struct flite_dev *dev);
 void flite_hw_set_cam_source_size(struct flite_dev *dev);
 void flite_hw_set_cam_channel(struct flite_dev *dev);
+void flite_hw_set_lite_B_csis_source(struct flite_dev *dev, enum flite_b_csis_source src);
 void flite_hw_set_camera_type(struct flite_dev *dev, struct s3c_platform_camera *cam);
 int flite_hw_set_source_format(struct flite_dev *dev);
 void flite_hw_set_output_dma(struct flite_dev *dev, bool enable);
+void flite_hw_set_output_gscaler(struct flite_dev *dev, bool enable);
 void flite_hw_set_interrupt_source(struct flite_dev *dev, u32 source);
 void flite_hw_set_config_irq(struct flite_dev *dev, struct s3c_platform_camera *cam);
 void flite_hw_set_window_offset(struct flite_dev *dev);
@@ -263,6 +337,8 @@ void flite_hw_set_output_size(struct flite_dev *dev);
 void flite_hw_set_dma_offset(struct flite_dev *dev);
 void flite_hw_set_output_addr(struct flite_dev *dev, struct flite_addr *addr,
 							int index);
+void flite_hw_set_output_frame_count_seq(struct flite_dev *dev, int cnt);
+void flite_hw_set_output_index(struct flite_dev *dev, bool enable, int index);
 
 #if defined(CONFIG_VIDEOBUF2_CMA_PHYS)
 extern const struct flite_vb2 flite_vb2_cma;
@@ -296,7 +372,7 @@ inline struct flite_fmt const *find_flite_format(struct v4l2_mbus_framefmt *mf);
  * Locking: Need to be called with fimc_dev::slock held.
  */
 
-#if defined(CONFIG_MEDIA_CONTROLLER) && defined(CONFIG_ARCH_EXYNOS5)
+#if defined(CONFIG_MEDIA_CONTROLLER)
 static inline void active_queue_add(struct flite_dev *flite,
 				    struct flite_buffer *buf)
 {

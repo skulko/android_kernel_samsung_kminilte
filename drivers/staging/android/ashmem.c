@@ -419,6 +419,7 @@ static int set_name(struct ashmem_area *asma, void __user *name)
 		return len;
 	if (len == ASHMEM_NAME_LEN)
 		lname[ASHMEM_NAME_LEN - 1] = '\0';
+
 	mutex_lock(&ashmem_mutex);
 
 	/* cannot change an existing mapping's name */
@@ -428,6 +429,7 @@ static int set_name(struct ashmem_area *asma, void __user *name)
 		strcpy(asma->name + ASHMEM_NAME_PREFIX_LEN, lname);
 
 	mutex_unlock(&ashmem_mutex);
+
 	return ret;
 }
 
@@ -450,8 +452,10 @@ static int get_name(struct ashmem_area *asma, void __user *name)
 		memcpy(lname, ASHMEM_NAME_DEF, len);
 	}
 	mutex_unlock(&ashmem_mutex);
+
 	if (unlikely(copy_to_user(name, lname, len)))
 		ret = -EFAULT;
+
 	return ret;
 }
 

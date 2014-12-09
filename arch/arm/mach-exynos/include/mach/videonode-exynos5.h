@@ -16,6 +16,9 @@
 #define S5P_VIDEONODE_MFC_DEC		6
 #define S5P_VIDEONODE_MFC_ENC		7
 
+#define EXYNOS_VIDEONODE_JPEG_HX_DEC(x)		(13 - (x) * 2)
+#define EXYNOS_VIDEONODE_JPEG_HX_ENC(x)		(14 - (x) * 2)
+
 #define EXYNOS_VIDEONODE_ROTATOR		21
 
 #define EXYNOS_VIDEONODE_GSC_M2M(x)		(23 + (x) * 3)
@@ -27,6 +30,14 @@
  * Exynos5250 supports graphic0~3 layer */
 #define EXYNOS_VIDEONODE_MXR_GRP(x)		(16 + x)
 #define EXYNOS_VIDEONODE_MXR_VIDEO		20
-#define EXYNOS_VIDEONODE_FIMC_IS			(40)
+
+#ifdef CONFIG_VIDEO_EXYNOS_FIMC_IS
+/* 100 ~ 149 is used by FIMC-IS */
+#define EXYNOS_VIDEONODE_FIMC_IS		(100)
+#else
+#define EXYNOS_VIDEONODE_FIMC_IS		(40)
+#endif
+
+#define EXYNOS_VIDEONODE_SCALER(x)		(50 + x)
 
 #endif /* __MACH_VIDEONODE_EXYNOS5_H */

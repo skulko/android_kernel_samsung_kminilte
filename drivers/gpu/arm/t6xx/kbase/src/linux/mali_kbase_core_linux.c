@@ -24,6 +24,7 @@
 #include <kbase/src/common/mali_kbase_uku.h>
 #include <kbase/src/common/mali_midg_regmap.h>
 #include <kbase/src/linux/mali_kbase_mem_linux.h>
+#include <kbase/src/linux/mali_kbase_config_linux.h>
 #ifdef CONFIG_MALI_NO_MALI
 #include "mali_kbase_model_linux.h"
 #endif /* CONFIG_MALI_NO_MALI */
@@ -48,7 +49,12 @@
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/compat.h>	/* is_compat_task */
+#ifdef SLSI_INTEGRATION
+#include <linux/oom.h>
+#endif
+#include <kbase/src/common/mali_kbase_8401_workaround.h>
 #include <kbase/src/common/mali_kbase_hw.h>
+#include <kbase/src/platform/mali_kbase_platform_common.h>
 #ifdef CONFIG_SYNC
 #include <kbase/src/linux/mali_kbase_sync.h>
 #endif /* CONFIG_SYNC */
@@ -619,6 +625,7 @@ static mali_error kbase_dispatch(kbase_context *kctx, void * const args, u32 arg
 			break;
 
 		}
+
 	case KBASE_FUNC_FIND_CPU_MAPPING:
 		{
 			kbase_uk_find_cpu_mapping *find = args;
@@ -880,7 +887,7 @@ static int kbase_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-#define CALL_MAX_SIZE 536 
+#define CALL_MAX_SIZE 528 
 
 static long kbase_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
@@ -1356,6 +1363,8 @@ static int kbase_install_interrupts(kbase_device *kbdev)
 	int err;
 	u32 i;
 
+	BUG_ON(nr > PLATFORM_CONFIG_IRQ_RES_COUNT);	/* Only 3 interrupts! */
+
 	for (i = 0; i < nr; i++) {
 		err = request_irq(osdev->irqs[i].irq, kbase_handler_table[i], osdev->irqs[i].flags | IRQF_SHARED, dev_name(osdev->dev), kbase_tag(kbdev, i));
 		if (err) {
@@ -1418,7 +1427,7 @@ static ssize_t show_gpu_memory(struct device *dev, struct device_attribute *attr
 	ssize_t ret = 0;
 	struct list_head *entry;
 
-	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Name                 pid  cap(pages) usage(pages) unmapped(pages)\n" "=================================================================\n");
+	ret += scnprintf(buf + ret, PAGE_SIZE - ret, "Name              cap(pages) usage(pages)\n" "=========================================\n");
 	down(&kbase_dev_list_lock);
 	list_for_each(entry, &kbase_dev_list) {
 		struct kbase_device *kbdev = NULL;
@@ -1426,30 +1435,13 @@ static ssize_t show_gpu_memory(struct device *dev, struct device_attribute *attr
 
 		kbdev = list_entry(entry, struct kbase_device, osdev.entry);
 		/* output the total memory usage and cap for this device */
-		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%-16s           %8u   %8u\n",
-			kbdev->osdev.devname, kbdev->memdev.usage.max_pages,
-			atomic_read(&(kbdev->memdev.usage.cur_pages)));
+		ret += scnprintf(buf + ret, PAGE_SIZE - ret, "%-16s  %10u   %10u\n", kbdev->osdev.devname, kbdev->memdev.usage.max_pages, atomic_read(&(kbdev->memdev.usage.cur_pages))
+		    );
 		mutex_lock(&kbdev->kctx_list_lock);
 		list_for_each_entry(element, &kbdev->kctx_list, link) {
-			struct pid *pid;
-			struct task_struct *tsk = NULL;
-
-			pid = find_get_pid(element->kctx->pid);
-			if (pid)
-				tsk = get_pid_task(pid, PIDTYPE_PID);
-
 			/* output the memory usage and cap for each kctx opened on this device */
-			ret += scnprintf(buf + ret, PAGE_SIZE - ret,
-				"  %-16s %5u   %8u   %8u   %8u\n",
-				tsk ? tsk->comm : "", element->kctx->pid,
-				element->kctx->usage.max_pages,
-				atomic_read(&(element->kctx->usage.cur_pages)),
-				atomic_read(&(element->kctx->nonmapped_pages)));
-
-			if (tsk)
-				put_task_struct(tsk);
-			if (pid)
-				put_pid(pid);
+			ret += scnprintf(buf + ret, PAGE_SIZE - ret, "  %s-0x%p %10u   %10u\n", "kctx", element->kctx, element->kctx->usage.max_pages, atomic_read(&(element->kctx->usage.cur_pages))
+			    );
 		}
 		mutex_unlock(&kbdev->kctx_list_lock);
 	}
@@ -2214,6 +2206,37 @@ static void kbase_common_reg_unmap(kbase_device * const kbdev)
 }
 #endif /* CONFIG_MALI_NO_MALI */
 
+#ifdef SLSI_INTEGRATION
+static u32 _get_gpu_memory_total_pages(void) {
+	u32 total_pages = 0;
+	struct list_head *entry;
+
+	down(&kbase_dev_list_lock);
+	list_for_each(entry, &kbase_dev_list) {
+		struct kbase_device *kbdev = NULL;
+
+		kbdev = list_entry(entry, struct kbase_device, osdev.entry);
+		/* output the total memory usage and cap for this device */
+		total_pages += atomic_read(&(kbdev->memdev.usage.cur_pages));
+	}
+	up(&kbase_dev_list_lock);
+
+	return total_pages;
+}
+
+static int mali_oom_handler(struct notifier_block *nb,
+		unsigned long val, void *data)
+{
+	u32 total = _get_gpu_memory_total_pages() * PAGE_SIZE;
+	printk(KERN_INFO "mali gpu memory: %u KB\n", total >> 10);
+	return 0;
+}
+
+static struct notifier_block mali_oom_notifier = {
+	.notifier_call = mali_oom_handler,
+};
+#endif
+
 static int kbase_common_device_init(kbase_device *kbdev)
 {
 	struct kbase_os_device *osdev = &kbdev->osdev;
@@ -2230,13 +2253,15 @@ static int kbase_common_device_init(kbase_device *kbdev)
 #if MALI_CUSTOMER_RELEASE == 0
 		    , inited_js_timeouts = (1u << 7)
 #endif /* MALI_CUSTOMER_RELEASE == 0 */
-		    , inited_pm_runtime_init = (1u << 8)
-		    , inited_gpu_memory = (1u << 9)
+		    /* BASE_HW_ISSUE_8401 */
+		    , inited_workaround = (1u << 8)
+		    , inited_pm_runtime_init = (1u << 9)
+		    , inited_gpu_memory = (1u << 10)
 #ifdef CONFIG_MALI_DEBUG_SHADER_SPLIT_FS
-		,inited_sc_split        = (1u << 10)
+		,inited_sc_split        = (1u << 11)
 #endif /* CONFIG_MALI_DEBUG_SHADER_SPLIT_FS */
 #ifdef CONFIG_MALI_TRACE_TIMELINE
-		,inited_timeline = (1u << 11)
+		,inited_timeline = (1u << 12)
 #endif /* CONFIG_MALI_TRACE_LINE */
 	};
 
@@ -2360,6 +2385,15 @@ static int kbase_common_device_init(kbase_device *kbdev)
 	}
 	inited |= inited_timeline;
 #endif /* CONFIG_MALI_TRACE_TIMELINE */
+#ifdef SLSI_INTEGRATION
+	register_oom_notifier(&mali_oom_notifier);
+#endif
+	if (kbase_hw_has_issue(kbdev, BASE_HW_ISSUE_8401)) {
+		if (MALI_ERROR_NONE != kbasep_8401_workaround_init(kbdev))
+			goto out_partial;
+
+		inited |= inited_workaround;
+	}
 
 	mali_err = kbase_pm_powerup(kbdev);
 	if (MALI_ERROR_NONE == mali_err) {
@@ -2380,6 +2414,10 @@ static int kbase_common_device_init(kbase_device *kbdev)
 	}
 
  out_partial:
+	if (kbase_hw_has_issue(kbdev, BASE_HW_ISSUE_8401)) {
+		if (inited & inited_workaround)
+			kbasep_8401_workaround_term(kbdev);
+	}
 #ifdef CONFIG_MALI_TRACE_TIMELINE
 	if (inited & inited_timeline)
 		kbasep_trace_timeline_debugfs_term(kbdev);
@@ -2569,6 +2607,9 @@ static int kbase_platform_device_probe(struct platform_device *pdev)
 
 static int kbase_common_device_remove(struct kbase_device *kbdev)
 {
+	if (kbase_hw_has_issue(kbdev, BASE_HW_ISSUE_8401))
+		kbasep_8401_workaround_term(kbdev);
+
 	if (kbdev->pm.callback_power_runtime_term)
 		kbdev->pm.callback_power_runtime_term(kbdev);
 
@@ -2759,42 +2800,81 @@ static struct platform_driver kbase_platform_driver = {
 };
 
 #ifdef CONFIG_MALI_PLATFORM_FAKE
-#ifndef MALI_PLATFORM_FAKE_MODULE
-extern int kbase_platform_fake_register(void);
-extern void kbase_platform_fake_unregister(void);
-#endif
-#endif
+static struct platform_device *mali_device;
+#endif /* CONFIG_MALI_PLATFORM_FAKE */
 
 static int __init kbase_driver_init(void)
 {
-	int ret;
-	
+	int err;
 #ifdef CONFIG_MALI_PLATFORM_FAKE
-#ifndef MALI_PLATFORM_FAKE_MODULE
-	ret = kbase_platform_fake_register();
-	if (ret)
-		return ret;
-#endif
-#endif
-	ret = platform_driver_register(&kbase_platform_driver);
-#ifdef CONFIG_MALI_PLATFORM_FAKE
-#ifndef MALI_PLATFORM_FAKE_MODULE
-	if (ret)
-		kbase_platform_fake_unregister();
-#endif
-#endif
+	kbase_platform_config *config;
+	int attribute_count;
+	struct resource resources[PLATFORM_CONFIG_RESOURCE_COUNT];
 
-	return ret;
+	config = kbase_get_platform_config();
+	if (config == NULL)
+	{
+		printk(KERN_ERR KBASE_DRV_NAME "couldn't get platform config\n");
+		return -ENODEV;
+	}
+
+	attribute_count = kbasep_get_config_attribute_count(config->attributes);
+#ifdef CONFIG_MACH_MANTA
+	err = platform_device_add_data(&exynos5_device_g3d, config->attributes, attribute_count * sizeof(config->attributes[0]));
+	if (err)
+		return err;
+#else
+
+	mali_device = platform_device_alloc(kbase_drv_name, 0);
+	if (mali_device == NULL)
+		return -ENOMEM;
+
+	kbasep_config_parse_io_resources(config->io_resources, resources);
+	err = platform_device_add_resources(mali_device, resources, PLATFORM_CONFIG_RESOURCE_COUNT);
+	if (err) {
+		platform_device_put(mali_device);
+		mali_device = NULL;
+		return err;
+	}
+
+	err = platform_device_add_data(mali_device, config->attributes, attribute_count * sizeof(config->attributes[0]));
+	if (err) {
+		platform_device_unregister(mali_device);
+		mali_device = NULL;
+		return err;
+	}
+
+	err = platform_device_add(mali_device);
+	if (err) {
+		platform_device_unregister(mali_device);
+		mali_device = NULL;
+		return err;
+	}
+
+#endif /* CONFIG_CONFIG_MACH_MANTA */
+#else /* CONFIG_MALI_PLATFORM_FAKE */
+
+	/* Call any hooks required for platform initialization at this stage */
+	err = kbase_platform_early_init();
+	if (err)
+		return err;
+
+#endif /* CONFIG_MALI_PLATFORM_FAKE */
+
+	err = platform_driver_register(&kbase_platform_driver);
+	if (err)
+		return err;
+
+	return 0;
 }
 
 static void __exit kbase_driver_exit(void)
 {
 	platform_driver_unregister(&kbase_platform_driver);
 #ifdef CONFIG_MALI_PLATFORM_FAKE
-#ifndef MALI_PLATFORM_FAKE_MODULE
-	kbase_platform_fake_unregister();
-#endif
-#endif
+	if (mali_device)
+		platform_device_unregister(mali_device);
+#endif /* CONFIG_MALI_PLATFORM_FAKE */
 }
 
 module_init(kbase_driver_init);

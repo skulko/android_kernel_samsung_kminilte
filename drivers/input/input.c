@@ -223,8 +223,6 @@ static void input_handle_event(struct input_dev *dev,
 	case EV_SYN:
 		switch (code) {
 		case SYN_CONFIG:
-		case SYN_TIME_SEC:
-		case SYN_TIME_NSEC:
 			disposition = INPUT_PASS_TO_ALL;
 			break;
 
@@ -517,14 +515,20 @@ int input_open_device(struct input_handle *handle)
 
 	handle->open++;
 
+#ifdef CONFIG_INPUT_ENABLED
 	dev->users_private++;
 	if (!dev->disabled && !dev->users++ && dev->open)
+#else
+	if (!dev->users++ && dev->open)
+#endif
 		retval = dev->open(dev);
 
 	if (retval) {
+#ifdef CONFIG_INPUT_ENABLED
 		dev->users_private--;
 		if (!dev->disabled)
-			dev->users--;
+#endif
+		dev->users--;
 		if (!--handle->open) {
 			/*
 			 * Make sure we are not delivering any more events
@@ -572,8 +576,12 @@ void input_close_device(struct input_handle *handle)
 
 	__input_release_device(handle);
 
+#ifdef CONFIG_INPUT_ENABLED
 	--dev->users_private;
 	if (!dev->disabled && !--dev->users && dev->close)
+#else
+	if (!--dev->users && dev->close)
+#endif
 		dev->close(dev);
 
 	if (!--handle->open) {
@@ -589,6 +597,7 @@ void input_close_device(struct input_handle *handle)
 }
 EXPORT_SYMBOL(input_close_device);
 
+#ifdef CONFIG_INPUT_ENABLED
 static int input_enable_device(struct input_dev *dev)
 {
 	int retval;
@@ -632,6 +641,7 @@ static int input_disable_device(struct input_dev *dev)
 	mutex_unlock(&dev->mutex);
 	return 0;
 }
+#endif
 
 /*
  * Simulate keyup events for all keys that are marked as pressed.
@@ -1341,6 +1351,7 @@ static ssize_t input_dev_show_properties(struct device *dev,
 }
 static DEVICE_ATTR(properties, S_IRUGO, input_dev_show_properties, NULL);
 
+#ifdef CONFIG_INPUT_ENABLED
 static ssize_t input_dev_show_enabled(struct device *dev,
 					 struct device_attribute *attr,
 					 char *buf)
@@ -1373,6 +1384,7 @@ static ssize_t input_dev_store_enabled(struct device *dev,
 
 static DEVICE_ATTR(enabled, S_IRUGO | S_IWUSR,
 		   input_dev_show_enabled, input_dev_store_enabled);
+#endif
 
 static struct attribute *input_dev_attrs[] = {
 	&dev_attr_name.attr,
@@ -1380,7 +1392,9 @@ static struct attribute *input_dev_attrs[] = {
 	&dev_attr_uniq.attr,
 	&dev_attr_modalias.attr,
 	&dev_attr_properties.attr,
+#ifdef CONFIG_INPUT_ENABLED
 	&dev_attr_enabled.attr,
+#endif
 	NULL
 };
 
@@ -1658,9 +1672,9 @@ void input_reset_device(struct input_dev *dev)
 		 * Keys that have been pressed at suspend time are unlikely
 		 * to be still pressed when we resume.
 		 */
-		spin_lock_irq(&dev->event_lock);
+		/* spin_lock_irq(&dev->event_lock);
 		input_dev_release_keys(dev);
-		spin_unlock_irq(&dev->event_lock);
+		spin_unlock_irq(&dev->event_lock); */
 	}
 
 	mutex_unlock(&dev->mutex);

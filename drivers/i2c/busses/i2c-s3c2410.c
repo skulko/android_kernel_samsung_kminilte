@@ -231,9 +231,6 @@ static inline void s3c24xx_i2c_stop(struct s3c24xx_i2c *i2c, int ret)
 
 	/* stop the transfer */
 
-	/* Disable irq */
-	s3c24xx_i2c_disable_irq(i2c);
-
 	/* STOP signal generation : MTx(0xD0) */
 	iicstat = readl(i2c->regs + S3C2410_IICSTAT);
 	iicstat &= ~S3C2410_IICSTAT_START;
@@ -243,6 +240,9 @@ static inline void s3c24xx_i2c_stop(struct s3c24xx_i2c *i2c, int ret)
 	iiccon = readl(i2c->regs + S3C2410_IICCON);
 	iiccon &= ~S3C2410_IICCON_IRQPEND;
 	writel(iiccon, i2c->regs + S3C2410_IICCON);
+
+	/* Disable irq */
+	s3c24xx_i2c_disable_irq(i2c);
 
 	s3c24xx_i2c_master_complete(i2c, ret);
 
@@ -873,6 +873,9 @@ static int s3c24xx_i2c_init(struct s3c24xx_i2c *i2c)
 		if (s3c24xx_i2c_parse_dt_gpio(i2c))
 			return -EINVAL;
 
+	if (pdata->cfg_mux)
+		pdata->cfg_mux();
+
 	/* write slave address */
 
 	writeb(pdata->slave_addr, i2c->regs + S3C2410_IICADD);
@@ -1137,7 +1140,7 @@ static int s3c24xx_i2c_suspend_noirq(struct device *dev)
 	return 0;
 }
 
-static int s3c24xx_i2c_resume(struct device *dev)
+static int s3c24xx_i2c_resume_noirq(struct device *dev)
 {
 	struct platform_device *pdev = to_platform_device(dev);
 	struct s3c24xx_i2c *i2c = platform_get_drvdata(pdev);
@@ -1158,6 +1161,9 @@ static int s3c24xx_i2c_resume(struct device *dev)
 
 	i2c->is_suspended = false;
 
+	if (i2c->pdata->cfg_mux)
+		i2c->pdata->cfg_mux();
+
 	i2c_unlock_adapter(&i2c->adap);
 
 	return 0;
@@ -1165,7 +1171,7 @@ static int s3c24xx_i2c_resume(struct device *dev)
 
 static const struct dev_pm_ops s3c24xx_i2c_dev_pm_ops = {
 	.suspend_noirq = s3c24xx_i2c_suspend_noirq,
-	.resume = s3c24xx_i2c_resume,
+	.resume_noirq = s3c24xx_i2c_resume_noirq,
 };
 
 #define S3C24XX_DEV_PM_OPS (&s3c24xx_i2c_dev_pm_ops)

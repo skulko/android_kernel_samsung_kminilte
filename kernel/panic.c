@@ -23,6 +23,11 @@
 #include <linux/init.h>
 #include <linux/nmi.h>
 #include <linux/dmi.h>
+#include "sched/sched.h"
+
+#ifdef CONFIG_EXYNOS_CORESIGHT_DEBUG
+#include <mach/coresight-debug.h>
+#endif
 
 #define PANIC_TIMER_STEP 100
 #define PANIC_BLINK_SPD 18
@@ -72,6 +77,20 @@ void __weak panic_smp_self_stop(void)
  *
  *	This function never returns.
  */
+#ifdef CONFIG_BL_SWITCHER
+#include <mach/debug-bL.h>
+
+void exynos_core_stat(void)
+{
+	char buf[72];
+
+	print_bL_state(buf, sizeof(buf));
+	buf[sizeof(buf) - 1] = '\0';
+
+	printk(KERN_EMERG "%s", buf);
+}
+#endif
+
 void panic(const char *fmt, ...)
 {
 	static DEFINE_SPINLOCK(panic_lock);
@@ -99,6 +118,9 @@ void panic(const char *fmt, ...)
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
 	printk(KERN_EMERG "Kernel panic - not syncing: %s\n",buf);
+#ifdef CONFIG_BL_SWITCHER
+	exynos_core_stat();
+#endif
 #ifdef CONFIG_DEBUG_BUGVERBOSE
 	/*
 	 * Avoid nested stack-dumping if a panic occurs during oops processing
@@ -106,6 +128,12 @@ void panic(const char *fmt, ...)
 	if (!test_taint(TAINT_DIE) && oops_in_progress <= 1)
 		dump_stack();
 #endif
+
+#ifdef CONFIG_EXYNOS_CORESIGHT_DEBUG
+	exynos_cs_show_pcval();
+#endif
+
+	sysrq_sched_debug_show();
 
 	/*
 	 * If we have crashed and we have a crash kernel loaded let it handle

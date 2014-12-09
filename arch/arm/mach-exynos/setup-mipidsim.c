@@ -41,13 +41,49 @@ static int s5p_dsim_enable_d_phy(struct mipi_dsim_device *dsim,
 {
 	unsigned int reg;
 #if defined(CONFIG_ARCH_EXYNOS5)
+#ifdef CONFIG_S5P_DEV_MIPI_DSIM0
+	reg = readl(S5P_MIPI_DPHY_CONTROL(0)) & ~(1 << 0);
+	/*TODO: enable bit is shared by DSI and CSI,
+	 *      to use runtime PM or reference count*/
+	reg |= (enable << 0);
+	writel(reg, S5P_MIPI_DPHY_CONTROL(0));
+#else
+#if defined CONFIG_SOC_EXYNOS5260
+	reg = readl(S5P_MIPI_DPHY_CONTROL(0)) & ~(1 << 0);
+	/*
+         * TODO: enable bit is shared by DSI and CSI,
+         *      to use runtime PM or reference count.
+         *      and now it cannot be disable.
+         */
+	if ((reg & S5P_MIPI_DPHY_SRESETN))
+		reg |= (1 << 0);
+	else
+		reg |= (enable << 0);
+	writel(reg, S5P_MIPI_DPHY_CONTROL(0));
+#else
 	reg = readl(S5P_MIPI_DPHY_CONTROL(1)) & ~(1 << 0);
 	reg |= (enable << 0);
 	writel(reg, S5P_MIPI_DPHY_CONTROL(1));
+#endif
+#endif
+#else
+#if defined CONFIG_SOC_EXYNOS3470
+	reg = readl(S5P_MIPI_DPHY_CONTROL(0)) & ~(1 << 0);
+	/*
+         * TODO: enable bit is shared by DSI and CSI,
+         *      to use runtime PM or reference count.
+         *      and now it cannot be disable.
+         */
+	if ((reg & S5P_MIPI_DPHY_SRESETN))
+		reg |= (1 << 0);
+	else
+		reg |= (enable << 0);
+	writel(reg, S5P_MIPI_DPHY_CONTROL(0));
 #else
 	reg = readl(S5P_MIPI_DPHY_CONTROL(0)) & ~(1 << 0);
 	reg |= (enable << 0);
 	writel(reg, S5P_MIPI_DPHY_CONTROL(0));
+#endif
 #endif
 	return 0;
 }
@@ -57,25 +93,26 @@ static int s5p_dsim_enable_dsi_master(struct mipi_dsim_device *dsim,
 {
 	unsigned int reg;
 #if defined(CONFIG_ARCH_EXYNOS5)
+#ifdef CONFIG_S5P_DEV_MIPI_DSIM0
+	reg = readl(S5P_MIPI_DPHY_CONTROL(0)) & ~(1 << 2);
+	reg |= (enable << 2);
+	writel(reg, S5P_MIPI_DPHY_CONTROL(0));
+#else
+#if defined CONFIG_SOC_EXYNOS5260
+	reg = readl(S5P_MIPI_DPHY_CONTROL(0)) & ~(1 << 2);
+	reg |= (enable << 2);
+	writel(reg, S5P_MIPI_DPHY_CONTROL(0));
+#else
 	reg = readl(S5P_MIPI_DPHY_CONTROL(1)) & ~(1 << 2);
 	reg |= (enable << 2);
 	writel(reg, S5P_MIPI_DPHY_CONTROL(1));
+
+#endif
+#endif
 #else
 	reg = readl(S5P_MIPI_DPHY_CONTROL(0)) & ~(1 << 2);
 	reg |= (enable << 2);
 	writel(reg, S5P_MIPI_DPHY_CONTROL(0));
-#endif
-	return 0;
-}
-
-int s5p_dsim_part_reset(struct mipi_dsim_device *dsim)
-{
-#if defined(CONFIG_ARCH_EXYNOS5)
-	if (dsim->id == 0)
-		writel(S5P_MIPI_M_RESETN, S5P_MIPI_DPHY_CONTROL(1));
-#else
-	if (dsim->id == 0)
-		writel(S5P_MIPI_M_RESETN, S5P_MIPI_DPHY_CONTROL(0));
 #endif
 	return 0;
 }

@@ -15,6 +15,8 @@
 
 /* SYSREG for local path between Gscaler and Mixer */
 #define SYSREG_DISP1BLK_CFG		(S3C_VA_SYS + 0x0214)
+#define SYSREG_DISP1BLK_CFG2		(S3C_VA_SYS + 0x0218)
+#define SYSREG_GSCLBLK_CFG1		(S3C_VA_SYS + 0x0224)
 
 #define DISP1BLK_CFG_FIFORST_DISP1	(1 << 23)
 #define DISP1BLK_CFG_MIXER_MASK		(0x3F << 2)
@@ -22,6 +24,8 @@
 #define DISP1BLK_CFG_MIXER0_SRC_GSC(x)	(x << 5)
 #define DISP1BLK_CFG_MIXER1_VALID	(1 << 4)
 #define DISP1BLK_CFG_MIXER1_SRC_GSC(x)	(x << 2)
+#define DISP1BLK_CFG2_LO_MASK		(0xF << 24)
+#define DISP1BLK_CFG2_LO_MASK_GSC(x)	(1 << (24 + x))
 
 /*
  * Register part
@@ -32,6 +36,7 @@
 #define MXR_INT_STATUS			0x000C
 #define MXR_LAYER_CFG			0x0010
 #define MXR_VIDEO_CFG			0x0014
+#define MXR_VIDEO_LIMITER_PARA_CFG	0x0018
 #define MXR_GRAPHIC0_CFG		0x0020
 #define MXR_GRAPHIC0_BASE		0x0024
 #define MXR_GRAPHIC0_SPAN		0x0028
@@ -56,7 +61,8 @@
 /* after EXYNOS5250 for video layer transfered from Gscaler */
 #define MXR_VIDEO_LT			0x0090
 #define MXR_VIDEO_RB			0x0094
-
+/* after is_ip_ver_5s for mixer resolution setting */
+#define MXR_RESOLUTION			0x0310
 /* after EXYNOS4212 for setting 3D */
 #define MXR_TVOUT_CFG			0x0100
 #define MXR_3D_ACTIVE_VIDEO		0x0104
@@ -152,10 +158,12 @@
 #define MXR_CFG_SCAN_SD			(0 << 0)
 #define MXR_CFG_SCAN_HD			(1 << 0)
 #define MXR_CFG_SCAN_MASK		0x47
-
+#define MXR_CFG_COLOR_RANGE(x)		MXR_MASK_VAL(x, 10, 9)
+/*bits for MXR_RESOLUTION */
+#define MXR_RESOLUTION_WIDTH(x)		(x << 0)
+#define MXR_RESOLUTION_HEIGHT(x)	(x << 16)
 /* bits for MXR_GRAPHICn_CFG */
-#define MXR_GRP_CFG_BLANK_KEY_OFF	(1 << 21)
-#define MXR_GRP_CFG_PRE_MUL_MODE	(1 << 20)
+#define MXR_GRP_CFG_BLANK_KEY_EN	(1 << 21)
 #define MXR_GRP_CFG_LAYER_BLEND_EN	(1 << 17)
 #define MXR_GRP_CFG_PIXEL_BLEND_EN	(1 << 16)
 #define MXR_GRP_CFG_FORMAT_VAL(x)	MXR_MASK_VAL(x, 11, 8)
@@ -178,13 +186,15 @@
 
 /* bits for MXR_INT_EN */
 #define MXR_INT_EN_VSYNC		(1 << 11)
-#define MXR_INT_EN_ALL			(0x38b80)
+#define MXR_INT_EN_ALL_VER5		(0x3FB80)
+#define MXR_INT_EN_ALL_VER4		(0xF00)
 
 /* bit for MXR_INT_STATUS */
 #define MXR_INT_STATUS_MX1_GRP1		(1 << 17)
 #define MXR_INT_STATUS_MX1_GRP0		(1 << 16)
 #define MXR_INT_STATUS_MX1_VIDEO	(1 << 15)
 #define MXR_INT_CLEAR_VSYNC		(1 << 11)
+#define MXR_INT_STATUS_MX0_VP		(1 << 10)
 #define MXR_INT_STATUS_MX0_GRP1		(1 << 9)
 #define MXR_INT_STATUS_MX0_GRP0		(1 << 8)
 #define MXR_INT_STATUS_MX0_VIDEO	(1 << 7)
@@ -196,8 +206,16 @@
 #define MXR_LAYER_CFG_VP_VAL(x)		MXR_MASK_VAL(x, 3, 0)
 
 /* bit for MXR_VIDEO_CFG */
+#define MXR_VIDEO_CFG_LIMITER_DIS	(0 << 17)
+#define MXR_VIDEO_CFG_LIMITER_EN	(1 << 17)
 #define MXR_VIDEO_CFG_BLEND_EN		(1 << 16)
 #define MXR_VIDEO_CFG_ALPHA(x)		MXR_MASK_VAL(x, 7, 0)
+
+/* bit for MIXER_VIDEO_LIMITER_PARA_CFG */
+#define MXR_VIDEO_LIMITER_PARA_Y_UPPER(x)   (((x) & 0xFF) << 24)
+#define MXR_VIDEO_LIMITER_PARA_Y_LOWER(x)   (((x) & 0xFF) << 16)
+#define MXR_VIDEO_LIMITER_PARA_C_UPPER(x)   (((x) & 0xFF) << 8)
+#define MXR_VIDEO_LIMITER_PARA_C_LOWER(x)   (((x) & 0xFF) << 0)
 
 /* bit for MXR_VIDEO_LT */
 #define MXR_VIDEO_LT_LEFT_VAL(x)	MXR_MASK_VAL(x, 31, 16)

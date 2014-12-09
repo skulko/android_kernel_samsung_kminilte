@@ -21,6 +21,8 @@
 #include <asm/memory.h>
 #include <asm/procinfo.h>
 #include <asm/hardware/cache-l2x0.h>
+#include <asm/bL_entry.h>
+#include <asm/bL_switcher.h>
 #include <linux/kbuild.h>
 
 /*
@@ -105,7 +107,7 @@ int main(void)
   BLANK();
 #endif
 #ifdef CONFIG_CPU_HAS_ASID
-  DEFINE(MM_CONTEXT_ID,		offsetof(struct mm_struct, context.id.counter));
+  DEFINE(MM_CONTEXT_ID,		offsetof(struct mm_struct, context.id));
   BLANK();
 #endif
   DEFINE(VMA_VM_MM,		offsetof(struct vm_area_struct, vm_mm));
@@ -144,5 +146,15 @@ int main(void)
   DEFINE(DMA_BIDIRECTIONAL,	DMA_BIDIRECTIONAL);
   DEFINE(DMA_TO_DEVICE,		DMA_TO_DEVICE);
   DEFINE(DMA_FROM_DEVICE,	DMA_FROM_DEVICE);
+  BLANK();
+  DEFINE(BL_POWER_UP_SETUP,	offsetof(struct bL_power_ops, power_up_setup));
+  DEFINE(BL_SYNC_CLUSTER_SIZE,	sizeof(struct bL_cluster_sync_struct));
+  DEFINE(BL_SYNC_CLUSTER_FIRST_MAN,
+			offsetof(struct bL_cluster_sync_struct, first_man));
+  DEFINE(BL_SYNC_CLUSTER_CPUS, offsetof(struct bL_cluster_sync_struct, cpus));
+  DEFINE(BL_SYNC_CLUSTER_CLUSTER,
+			offsetof(struct bL_cluster_sync_struct, cluster));
+  DEFINE(BL_SYNC_CLUSTER_INBOUND,
+			offsetof(struct bL_cluster_sync_struct, inbound));
   return 0; 
 }

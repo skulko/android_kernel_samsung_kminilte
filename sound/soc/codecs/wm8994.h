@@ -55,8 +55,6 @@ int wm8958_aif_ev(struct snd_soc_dapm_widget *w,
 
 void wm8958_dsp2_init(struct snd_soc_codec *codec);
 
-void wm8958_mic_id(void *data, u16 status);
-
 struct wm8994_micdet {
 	struct snd_soc_jack *jack;
 	bool detecting;
@@ -81,6 +79,7 @@ struct wm8994_priv {
 	int sysclk_rate[2];
 	int mclk[2];
 	int aifclk[2];
+	int aifdiv[2];
 	int channels[2];
 	struct wm8994_fll_config fll[2], fll_suspend[2];
 	struct completion fll_locked[2];
@@ -135,7 +134,6 @@ struct wm8994_priv {
 	struct mutex accdet_lock;
 	struct wm8994_micdet micdet[2];
 	struct delayed_work mic_work;
-	struct delayed_work open_circuit_work;
 	bool mic_detecting;
 	bool jack_mic;
 	int btn_mask;

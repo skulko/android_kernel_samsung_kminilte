@@ -1,4 +1,4 @@
-/* linux/drivers/media/video/samsung/fimg2d4x/fimg2d_helper.h
+/* linux/drivers/media/video/exynos/fimg2d/fimg2d_helper.h
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
@@ -19,28 +19,47 @@
 #define rect_w(r)	((r)->x2 - (r)->x1)
 #define rect_h(r)	((r)->y2 - (r)->y1)
 
-static inline char *imagename(enum image_object image)
+#ifdef DEBUG
+void fimg2d_perf_start(struct fimg2d_bltcmd *cmd, enum perf_desc desc);
+void fimg2d_perf_end(struct fimg2d_bltcmd *cmd, enum perf_desc desc);
+void fimg2d_perf_print(struct fimg2d_bltcmd *cmd);
+
+static inline void perf_start(struct fimg2d_bltcmd *cmd, enum perf_desc desc)
 {
-	switch (image) {
-	case IDST:
-		return "DST";
-	case ISRC:
-		return "SRC";
-	case IMSK:
-		return "MSK";
-	default:
-		return NULL;
-	}
+	if (g2d_debug == DBG_PERF)
+		fimg2d_perf_start(cmd, desc);
 }
 
-static inline size_t fimg2d_num_planes(struct fimg2d_image *img)
+static inline void perf_end(struct fimg2d_bltcmd *cmd, enum perf_desc desc)
 {
-	if (!img->addr.type)
-		return 0;
-
-	return img->order < P1_ORDER_END ? 1 : 2;
+	if (g2d_debug == DBG_PERF)
+		fimg2d_perf_end(cmd, desc);
 }
 
-void fimg2d_dump_command(struct fimg2d_bltcmd *cmd);
+static inline void perf_print(struct fimg2d_bltcmd *cmd)
+{
+	if (g2d_debug == DBG_PERF)
+		fimg2d_perf_print(cmd);
+}
+#else
+#define perf_start(cmd, desc)
+#define perf_end(cmd, desc)
+#define perf_print(cmd)
+#endif
+
+#ifdef DEBUG
+void fimg2d_debug_command(struct fimg2d_bltcmd *cmd);
+void fimg2d_debug_command_simple(struct fimg2d_bltcmd *cmd);
+
+static inline void fimg2d_dump_command(struct fimg2d_bltcmd *cmd)
+{
+	if (g2d_debug == DBG_DEBUG)
+		fimg2d_debug_command(cmd);
+	else if (g2d_debug == DBG_ONELINE)
+		fimg2d_debug_command_simple(cmd);
+}
+#else
+#define fimg2d_dump_command(cmd)
+#endif
 
 #endif /* __FIMG2D_HELPER_H */

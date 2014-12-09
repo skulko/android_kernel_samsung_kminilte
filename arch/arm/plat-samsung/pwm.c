@@ -54,6 +54,7 @@ struct pwm_device {
 };
 
 #define pwm_dbg(_pwm, msg...) dev_dbg(&(_pwm)->pdev->dev, msg)
+#define pwm_err(_pwm, msg...) dev_err(&(_pwm)->pdev->dev, msg)
 
 static struct clk *clk_scaler[2];
 
@@ -237,6 +238,11 @@ int pwm_config(struct pwm_device *pwm, int duty_ns, int period_ns)
 		pwm_dbg(pwm, "tin_rate=%lu\n", tin_rate);
 	} else {
 		tin_rate = clk_get_rate(pwm->clk);
+	}
+
+	if (tin_rate == 0) {
+		pwm_err(pwm, "failed to configure pwm: tin_rate is zero\n");
+		return -EINVAL;
 	}
 
 	/* Note, counters count down */

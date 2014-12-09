@@ -270,6 +270,9 @@ static void samsung_gpio_pm_4bit_resume(struct samsung_gpio_chip *chip)
 	u32 old_gpdat = __raw_readl(base + OFFS_DAT);
 	u32 gps_gpdat = chip->pm_save[2];
 
+	if (soc_is_exynos4415() && !strcmp(chip->chip.label, "GPL1"))
+		return;
+
 	/* First, modify the CON settings */
 
 	old_gpcon[0] = 0;

@@ -1,4 +1,4 @@
-/* linux/drivers/media/video/samsung/fimg2d4x/fimg2d.h
+/* linux/drivers/media/video/exynos/fimg2d/fimg2d.h
  *
  * Copyright (c) 2011 Samsung Electronics Co., Ltd.
  *	http://www.samsung.com/
@@ -21,28 +21,81 @@
 #include <linux/workqueue.h>
 #include <linux/platform_device.h>
 #include <linux/atomic.h>
-#include <linux/dma-mapping.h>
-#include <linux/dma-buf.h>
 #include <linux/mutex.h>
+#include <linux/pm_qos.h>
+#include <plat/fimg2d.h>
+#ifdef CCI_SNOOP
+#include <plat/cci.h>
+#endif
 
-#define FIMG2D_MINOR			(240)
-#define to_fimg2d_plat(d)		(to_platform_device(d)->dev.platform_data)
+#define FIMG2D_MINOR		(240)
 
-#ifdef CONFIG_VIDEO_FIMG2D_DEBUG
-#define fimg2d_debug(fmt, arg...)	printk(KERN_INFO "[%s] " fmt, __func__, ## arg)
+#define to_fimg2d_plat(d)	(to_platform_device(d)->dev.platform_data)
+#define ip_is_g2d_5a()		(fimg2d_ip_version_is() == IP_VER_G2D_5A)
+#define ip_is_g2d_5ar()		(fimg2d_ip_version_is() == IP_VER_G2D_5AR)
+#define ip_is_g2d_5r()		(fimg2d_ip_version_is() == IP_VER_G2D_5R)
+#define ip_is_g2d_5v()		(fimg2d_ip_version_is() == IP_VER_G2D_5V)
+#define ip_is_g2d_5h()		(fimg2d_ip_version_is() == IP_VER_G2D_5H)
+#define ip_is_g2d_5g()		(fimg2d_ip_version_is() == IP_VER_G2D_5G)
+#define ip_is_g2d_4p()		(fimg2d_ip_version_is() == IP_VER_G2D_4P)
+#define ip_is_g2d_4c()		(fimg2d_ip_version_is() == IP_VER_G2D_4C)
+#define ip_is_g2d_4h()		(fimg2d_ip_version_is() == IP_VER_G2D_4H)
+
+#ifdef DEBUG
+/*
+ * g2d_debug value:
+ *	0: no print
+ *	1: err
+ *	2: info
+ *	3: perf
+ *	4: oneline (simple)
+ *	5: debug
+ */
+extern int g2d_debug;
+
+enum debug_level {
+	DBG_NO,
+	DBG_ERR,
+	DBG_INFO,
+	DBG_PERF,
+	DBG_ONELINE,
+	DBG_DEBUG,
+};
+
+#define g2d_print(level, fmt, args...)				\
+	do {							\
+		if (g2d_debug >= level)				\
+			pr_info("[%s] " fmt, __func__, ##args);	\
+	} while (0)
+
+#define fimg2d_err(fmt, args...)	g2d_print(DBG_ERR, fmt, ##args)
+#define fimg2d_info(fmt, args...)	g2d_print(DBG_INFO, fmt, ##args)
+#define fimg2d_debug(fmt, args...)	g2d_print(DBG_DEBUG, fmt, ##args)
 #else
-#define fimg2d_debug(fmt, arg...)	do { } while (0)
+#define g2d_print(level, fmt, args...)
+#define fimg2d_err(fmt, args...)
+#define fimg2d_info(fmt, args...)
+#define fimg2d_debug(fmt, arg...)
 #endif
 
 #endif /* __KERNEL__ */
-
-#define FIMG2D_MAX_PLANES	2
 
 /* ioctl commands */
 #define FIMG2D_IOCTL_MAGIC	'F'
 #define FIMG2D_BITBLT_BLIT	_IOWR(FIMG2D_IOCTL_MAGIC, 0, struct fimg2d_blit)
 #define FIMG2D_BITBLT_SYNC	_IOW(FIMG2D_IOCTL_MAGIC, 1, int)
 #define FIMG2D_BITBLT_VERSION	_IOR(FIMG2D_IOCTL_MAGIC, 2, struct fimg2d_version)
+#define FIMG2D_BITBLT_ACTIVATE	_IOW(FIMG2D_IOCTL_MAGIC, 3, enum driver_act)
+
+enum fimg2d_qos_status {
+	FIMG2D_QOS_ON = 0,
+	FIMG2D_QOS_OFF
+};
+
+enum driver_act {
+	DRV_ACT = 0,
+	DRV_DEACT
+};
 
 struct fimg2d_version {
 	unsigned int hw;
@@ -52,7 +105,6 @@ struct fimg2d_version {
 /**
  * @BLIT_SYNC: sync mode, to wait for blit done irq
  * @BLIT_ASYNC: async mode, not to wait for blit done irq
- *
  */
 enum blit_sync {
 	BLIT_SYNC,
@@ -60,12 +112,18 @@ enum blit_sync {
 };
 
 /**
- * @ADDR_NONE: no image/solid color
- * @ADDR_DMA_BUF: dma-buf fds
+ * @ADDR_PHYS: physical address
+ * @ADDR_USER: user virtual address (physically Non-contiguous)
+ * @ADDR_USER_CONTIG: user virtual address (physically Contiguous)
+ * @ADDR_DEVICE: specific device virtual address
  */
 enum addr_space {
-	ADDR_NONE = 0,
-	ADDR_DMA_BUF,
+	ADDR_NONE,
+	ADDR_PHYS,
+	ADDR_KERN,
+	ADDR_USER,
+	ADDR_USER_CONTIG,
+	ADDR_DEVICE,
 };
 
 /**
@@ -153,15 +211,6 @@ enum scaling {
 };
 
 /**
- * @SCALING_PIXELS: ratio in pixels
- * @SCALING_RATIO: ratio in fixed point 16
- */
-enum scaling_factor {
-	SCALING_PIXELS,
-	SCALING_RATIO,
-};
-
-/**
  * premultiplied alpha
  */
 enum premultiplied {
@@ -234,7 +283,7 @@ enum blit_op {
 	/* end of blit operation */
 	BLIT_OP_END,
 };
-#define MAX_FIMG2D_BLIT_OP (int)BLIT_OP_END
+#define MAX_FIMG2D_BLIT_OP	((int)BLIT_OP_END)
 
 #ifdef __KERNEL__
 
@@ -255,27 +304,30 @@ enum image_object {
 #define IMSK			IMAGE_MSK
 #define ITMP			IMAGE_TMP
 #define IDST			IMAGE_DST
-#define image_table(u)		\
-	{			\
-		(u)->src,	\
-		(u)->msk,	\
-		(u)->tmp,	\
-		(u)->dst	\
-	}
 
+/**
+ * @size: dma size of image
+ * @cached: cached dma size of image
+ */
 struct fimg2d_dma {
-	struct dma_buf *dma_buf;
-	struct dma_buf_attachment *attachment;
-	struct sg_table *sg_table;
-	dma_addr_t dma_addr;
-	enum dma_data_direction direction;
+	unsigned long addr;
+	size_t size;
+	size_t cached;
+};
+
+struct fimg2d_dma_group {
+	struct fimg2d_dma base;
+	struct fimg2d_dma plane2;
 };
 
 #endif /* __KERNEL__ */
 
+/**
+ * @start: start address or unique id of image
+ */
 struct fimg2d_addr {
 	enum addr_space type;
-	int fd[FIMG2D_MAX_PLANES];
+	unsigned long start;
 };
 
 struct fimg2d_rect {
@@ -297,7 +349,7 @@ struct fimg2d_scale {
 };
 
 struct fimg2d_clip {
-	__u32 enable;
+	bool enable;
 	int x1;
 	int y1;
 	int x2;	/* x1 + width */
@@ -321,6 +373,7 @@ struct fimg2d_bluscr {
 /**
  * @plane2: address info for CbCr in YCbCr 2plane mode
  * @rect: crop/clip rect
+ * @need_cacheopr: true if cache coherency is required
  */
 struct fimg2d_image {
 	int width;
@@ -329,7 +382,9 @@ struct fimg2d_image {
 	enum pixel_order order;
 	enum color_format fmt;
 	struct fimg2d_addr addr;
+	struct fimg2d_addr plane2;
 	struct fimg2d_rect rect;
+	bool need_cacheopr;
 };
 
 /**
@@ -348,7 +403,7 @@ struct fimg2d_image {
 struct fimg2d_param {
 	unsigned long solid_color;
 	unsigned char g_alpha;
-	__u32 dither;
+	bool dither;
 	enum rotation rotate;
 	enum premultiplied premult;
 	struct fimg2d_scale scaling;
@@ -380,13 +435,32 @@ struct fimg2d_blit {
 
 #ifdef __KERNEL__
 
+enum perf_desc {
+	PERF_CACHE = 0,
+	PERF_SFR,
+	PERF_BLIT,
+	PERF_TOTAL,
+	PERF_END
+};
+#define MAX_PERF_DESCS		PERF_END
+
+struct fimg2d_perf {
+	unsigned int seq_no;
+	struct timeval start;
+	struct timeval end;
+};
+
 /**
+ * @pgd: base address of arm mmu pagetable
  * @ncmd: request count in blit command queue
  * @wait_q: conext wait queue head
 */
 struct fimg2d_context {
+	struct mm_struct *mm;
 	atomic_t ncmd;
 	wait_queue_head_t wait_q;
+	struct fimg2d_perf perf[MAX_PERF_DESCS];
+	void *vma_lock;
 };
 
 /**
@@ -407,12 +481,10 @@ struct fimg2d_context {
  * @node: list head of blit command queue
  */
 struct fimg2d_bltcmd {
-	enum blit_op op;
-	enum blit_sync sync;
-	unsigned int seq_no;
-	struct fimg2d_param param;
+	struct fimg2d_blit blt;
 	struct fimg2d_image image[MAX_IMAGES];
-	struct fimg2d_dma dma[MAX_IMAGES][FIMG2D_MAX_PLANES];
+	size_t dma_all;
+	struct fimg2d_dma_group dma[MAX_IMAGES];
 	struct fimg2d_context *ctx;
 	struct list_head node;
 };
@@ -433,34 +505,68 @@ struct fimg2d_bltcmd {
  * @workqueue: workqueue_struct for kfimg2dd
 */
 struct fimg2d_control {
-	atomic_t suspended;
-	atomic_t clkon;
 	struct clk *clock;
 	struct device *dev;
 	struct resource *mem;
 	void __iomem *regs;
 
-	bool err;
-	int irq;
+	atomic_t drvact;
+	atomic_t suspended;
+	atomic_t clkon;
+
 	atomic_t nctx;
 	atomic_t busy;
-	atomic_t active;
 	spinlock_t bltlock;
-	struct mutex open_lock;
+	struct mutex drvlock;
+	int irq;
 	wait_queue_head_t wait_q;
 	struct list_head cmd_q;
 	struct workqueue_struct *work_q;
+	struct pm_qos_request exynos5_g2d_cpu_qos;
+	struct pm_qos_request exynos5_g2d_mif_qos;
+	struct pm_qos_request exynos5_g2d_int_qos;
 
-	void (*blit)(struct fimg2d_control *info);
-	int (*configure)(struct fimg2d_control *info,
+	int (*blit)(struct fimg2d_control *ctrl);
+	int (*configure)(struct fimg2d_control *ctrl,
 			struct fimg2d_bltcmd *cmd);
-	void (*run)(struct fimg2d_control *info);
-	void (*stop)(struct fimg2d_control *info);
-	void (*dump)(struct fimg2d_control *info);
-	void (*finalize)(struct fimg2d_control *info);
+	void (*run)(struct fimg2d_control *ctrl);
+	void (*stop)(struct fimg2d_control *ctrl);
+	void (*dump)(struct fimg2d_control *ctrl);
+	void (*finalize)(struct fimg2d_control *ctrl);
 };
 
-int fimg2d_register_ops(struct fimg2d_control *info);
+int fimg2d_register_ops(struct fimg2d_control *ctrl);
+int fimg2d_ip_version_is(void);
+int bit_per_pixel(struct fimg2d_image *img, int plane);
+
+static inline int width2bytes(int width, int bpp)
+{
+	switch (bpp) {
+	case 32:
+	case 24:
+	case 16:
+	case 8:
+		return (width * bpp) >> 3;
+	case 1:
+		return (width + 7) >> 3;
+	case 4:
+		return (width + 1) >> 1;
+	default:
+		return 0;
+	}
+}
+
+#ifdef BLIT_WORKQUE
+#define g2d_lock(x)		do {} while (0)
+#define g2d_unlock(x)		do {} while (0)
+#define g2d_spin_lock(x, f)	spin_lock_irqsave(x, f)
+#define g2d_spin_unlock(x, f)	spin_unlock_irqrestore(x, f)
+#else
+#define g2d_lock(x)		mutex_lock(x)
+#define g2d_unlock(x)		mutex_unlock(x)
+#define g2d_spin_lock(x, f)	do { f = 0; } while (0)
+#define g2d_spin_unlock(x, f)	do { f = 0; } while (0)
+#endif
 
 #endif /* __KERNEL__ */
 

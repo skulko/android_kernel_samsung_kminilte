@@ -55,19 +55,12 @@ void s5p_dp_lane_swap(struct s5p_dp_device *dp, bool enable)
 {
 	u32 reg;
 
-	if (soc_is_exynos5250()) {
-		if (enable)
-			reg = LANE3_MAP_LOGIC_LANE_0 | LANE2_MAP_LOGIC_LANE_1 |
-				LANE1_MAP_LOGIC_LANE_2 | LANE0_MAP_LOGIC_LANE_3;
-		else
-			reg = LANE3_MAP_LOGIC_LANE_3 | LANE2_MAP_LOGIC_LANE_2 |
-				LANE1_MAP_LOGIC_LANE_1 | LANE0_MAP_LOGIC_LANE_0;
-	} else {
-		if (enable)
-			reg = LANE1_MAP_LOGIC_LANE_0 | LANE0_MAP_LOGIC_LANE_1;
-		else
-			reg = LANE1_MAP_LOGIC_LANE_1 | LANE0_MAP_LOGIC_LANE_0;
-	}
+	if (enable)
+		reg = LANE3_MAP_LOGIC_LANE_0 | LANE2_MAP_LOGIC_LANE_1 |
+			LANE1_MAP_LOGIC_LANE_2 | LANE0_MAP_LOGIC_LANE_3;
+	else
+		reg = LANE3_MAP_LOGIC_LANE_3 | LANE2_MAP_LOGIC_LANE_2 |
+			LANE1_MAP_LOGIC_LANE_1 | LANE0_MAP_LOGIC_LANE_0;
 
 	writel(reg, dp->reg_base + S5P_DP_LANE_MAP);
 }
@@ -139,11 +132,15 @@ void s5p_dp_init_interrupt(struct s5p_dp_device *dp)
 	writel(0xff, dp->reg_base + S5P_DP_COMMON_INT_STA_1);
 	writel(0x4f, dp->reg_base + S5P_DP_COMMON_INT_STA_2);
 	writel(0xe0, dp->reg_base + S5P_DP_COMMON_INT_STA_3);
-	if (soc_is_exynos5250())
+	if (soc_is_exynos5250() || soc_is_exynos5260())
 		writel(0xe7, dp->reg_base + S5P_DP_COMMON_INT_STA_4);
 	else
 		writel(0x27, dp->reg_base + S5P_DP_COMMON_INT_STA_4);
+#if defined(CONFIG_SOC_EXYNOS5260)
+	writel(0x43, dp->reg_base + S5P_DP_INT_STA);
+#else
 	writel(0x63, dp->reg_base + S5P_DP_INT_STA);
+#endif
 
 	/* 0:mask,1: unmask */
 	writel(0x00, dp->reg_base + S5P_DP_COMMON_INT_MASK_1);
@@ -686,8 +683,10 @@ int s5p_dp_read_bytes_from_dpcd(struct s5p_dp_device *dp,
 			retval = s5p_dp_start_aux_transaction(dp);
 			if (retval == 0)
 				break;
-			else
-				dev_dbg(dp->dev, "Aux Transaction fail!\n");
+			else {
+				dev_err(dp->dev, "Aux Transaction fail!\n");
+				usleep_range(5000, 5000);
+			}
 		}
 
 		for (cur_data_idx = 0; cur_data_idx < cur_data_count;

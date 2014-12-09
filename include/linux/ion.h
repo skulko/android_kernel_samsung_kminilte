@@ -18,6 +18,14 @@
 #define _LINUX_ION_H
 
 #include <linux/types.h>
+#include <linux/dma-direction.h>
+#include <linux/dma-buf.h>
+
+dma_addr_t ion_iovmm_map(struct dma_buf_attachment *attachment,
+			 off_t offset, size_t size,
+			 enum dma_data_direction direction, int id);
+void ion_iovmm_unmap(struct dma_buf_attachment *attachment, dma_addr_t iova);
+
 
 struct ion_handle;
 /**
@@ -27,7 +35,6 @@ struct ion_handle;
  * @ION_HEAP_TYPE_CARVEOUT:	 memory allocated from a prereserved
  * 				 carveout heap, allocations are physically
  * 				 contiguous
- * @ION_HEAP_TYPE_DMA:		 memory allocated via DMA API
  * @ION_NUM_HEAPS:		 helper for iterating over heaps, a bit mask
  * 				 is used to identify the heaps, so only 32
  * 				 total heap types are supported
@@ -37,7 +44,6 @@ enum ion_heap_type {
 	ION_HEAP_TYPE_SYSTEM_CONTIG,
 	ION_HEAP_TYPE_CARVEOUT,
 	ION_HEAP_TYPE_CHUNK,
-	ION_HEAP_TYPE_DMA,
 	ION_HEAP_TYPE_CUSTOM, /* must be last so device specific heaps always
 				 are at the end of this enum */
 	ION_NUM_HEAPS = 16,
@@ -46,7 +52,6 @@ enum ion_heap_type {
 #define ION_HEAP_SYSTEM_MASK		(1 << ION_HEAP_TYPE_SYSTEM)
 #define ION_HEAP_SYSTEM_CONTIG_MASK	(1 << ION_HEAP_TYPE_SYSTEM_CONTIG)
 #define ION_HEAP_CARVEOUT_MASK		(1 << ION_HEAP_TYPE_CARVEOUT)
-#define ION_HEAP_TYPE_DMA_MASK		(1 << ION_HEAP_TYPE_DMA)
 
 #define ION_NUM_HEAP_IDS		sizeof(unsigned int) * 8
 
@@ -61,6 +66,11 @@ enum ion_heap_type {
 #define ION_FLAG_CACHED_NEEDS_SYNC 2	/* mappings of this buffer will created
 					   at mmap time, if this is set
 					   caches must be managed manually */
+#define ION_FLAG_PRESERVE_KMAP 4	/* deprecated. ignored. */
+#define ION_FLAG_NOZEROED 8		/* Allocated buffer is not initialized
+					   with zero value and userspace is not
+					   able to access the buffer
+					 */
 
 #ifdef __KERNEL__
 struct ion_device;
@@ -108,7 +118,7 @@ struct ion_platform_heap {
  */
 struct ion_platform_data {
 	int nr;
-	struct ion_platform_heap *heaps;
+	struct ion_platform_heap heaps[];
 };
 
 /**
@@ -241,6 +251,35 @@ int ion_share_dma_buf_fd(struct ion_client *client, struct ion_handle *handle);
  * another exporter is passed in this function will return ERR_PTR(-EINVAL)
  */
 struct ion_handle *ion_import_dma_buf(struct ion_client *client, int fd);
+
+struct device;
+/**
+ * ion_register_special_device() - register a special device
+ * @dev: ion_device
+ * @special: the special device that needs dma mapping kept until the buffer is
+ *           freed
+ *
+ * This registers a special device that needs dma address mapped by
+ * dma_buf_map_attachment() kept until the buffer is freed and prevents not to
+ * unmap the dma address when dma_buf_unmap_attachment().
+ * Returns -EBUSY if a device is already registered.
+ */
+int ion_register_special_device(struct ion_device *dev, struct device *special);
+
+/**
+ * ion_iovmm_map() - map buffer to the address space for the special device
+ * @attachment: attachment of dma_buf that is the result of dma_buf_attach()
+ * @offset: offset that starts mapping
+ * @size: size of the mapping
+ * @direction: whether the device read or write
+ * @id: id of the part of the address space
+
+ * return dma address if the buffer has a dma address.
+ * return minus error number if mapping fails.
+ */
+dma_addr_t ion_iovmm_map(struct dma_buf_attachment *attachment,
+		     off_t offset, size_t size,
+		     enum dma_data_direction direction, int id);
 
 #endif /* __KERNEL__ */
 

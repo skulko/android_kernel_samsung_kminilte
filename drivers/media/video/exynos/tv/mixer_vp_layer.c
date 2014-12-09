@@ -128,14 +128,17 @@ static void mxr_vp_stream_set(struct mxr_layer *layer, int en)
 	mxr_reg_vp_layer_stream(layer->mdev, en);
 }
 
-static void mxr_vp_format_set(struct mxr_layer *layer)
+static void mxr_vp_format_set(struct mxr_layer *layer,
+				 const struct mxr_format *fmt,
+				 struct mxr_geometry *geo)
 {
-	mxr_reg_vp_format(layer->mdev, layer->fmt, &layer->geo);
+	mxr_reg_vp_format(layer->mdev, fmt, geo);
 }
 
 static void mxr_vp_fix_geometry(struct mxr_layer *layer)
 {
 	struct mxr_geometry *geo = &layer->geo;
+	struct mxr_device *mdev = layer->mdev;
 
 	mxr_dbg(layer->mdev, "%s start\n", __func__);
 	/* align horizontal size to 8 pixels */
@@ -175,6 +178,18 @@ static void mxr_vp_fix_geometry(struct mxr_layer *layer)
 		geo->dst.full_width - geo->dst.width);
 	geo->dst.y_offset = min(geo->dst.y_offset,
 		geo->dst.full_height - geo->dst.height);
+
+	mxr_dbg(mdev, "=========== VP size information ===========\n");
+	mxr_dbg(mdev, "SRC: full width = %d, full height = %d\n",
+			geo->src.full_width, geo->src.full_height);
+	mxr_dbg(mdev, "SRC: width = %d, height = %d, x = %d, y = %d\n",
+			geo->src.width, geo->src.height,
+			geo->src.x_offset, geo->src.y_offset);
+	mxr_dbg(mdev, "DST: full width = %d, full height = %d\n",
+			geo->dst.full_width, geo->dst.full_height);
+	mxr_dbg(mdev, "DST: width = %d, height = %d, x = %d, y = %d\n",
+			geo->dst.width, geo->dst.height,
+			geo->dst.x_offset, geo->dst.y_offset);
 }
 
 /* PUBLIC API */
@@ -193,7 +208,7 @@ struct mxr_layer *mxr_vp_layer_create(struct mxr_device *mdev, int cur_mxr,
 	};
 	char name[32];
 
-	sprintf(name, "mxr%d_video%d", cur_mxr, idx);
+	snprintf(name, sizeof(name), "mxr%d_video%d", cur_mxr, idx);
 
 	layer = mxr_base_layer_create(mdev, idx, name, &ops);
 	if (layer == NULL) {
@@ -205,6 +220,7 @@ struct mxr_layer *mxr_vp_layer_create(struct mxr_device *mdev, int cur_mxr,
 	layer->fmt_array_size = ARRAY_SIZE(mxr_video_format);
 	layer->minor = nr;
 	layer->type = MXR_LAYER_TYPE_VIDEO;
+	layer->prio = 1;
 
 	ret = mxr_base_layer_register(layer);
 	if (ret)

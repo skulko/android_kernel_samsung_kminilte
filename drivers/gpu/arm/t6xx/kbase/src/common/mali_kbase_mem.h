@@ -77,7 +77,7 @@ typedef struct kbase_va_region {
 #define KBASE_REG_FREE       (1ul << 0)	/* Free region */
 #define KBASE_REG_CPU_WR     (1ul << 1)	/* CPU write access */
 #define KBASE_REG_GPU_WR     (1ul << 2)	/* GPU write access */
-#define KBASE_REG_GPU_NX     (1ul << 3)	/* No eXecute flag */
+#define KBASE_REG_GPU_NX     (1ul << 3)	/* No eXectue flag */
 #define KBASE_REG_CPU_CACHED (1ul << 4)	/* Is CPU cached? */
 #define KBASE_REG_GPU_CACHED (1ul << 5)	/* Is GPU cached? */
 
@@ -105,11 +105,10 @@ typedef struct kbase_va_region {
 
 #ifndef KBASE_REG_ZONE_TMEM	/* To become 0 on a 64bit platform */
 /*
- * On a 32bit platform, TMEM should be wired from (4GB + shader region)
- * to the VA limit of the GPU. Unfortunately, the Linux mmap() interface 
- * limits us to 2^32 pages (2^44 bytes, see mmap64 man page for reference).
- * So we put the default limit to the maximum possible on Linux and shrink
- * it down, if required by the GPU, during initialization.
+ * On a 32bit platform, TMEM should be wired from 4GB to the VA limit
+ * of the GPU, which is currently hardcoded at 48 bits. Unfortunately,
+ * the Linux mmap() interface limits us to 2^32 pages (2^44 bytes, see
+ * mmap64 man page for reference).
  */
 #define KBASE_REG_ZONE_EXEC         KBASE_REG_ZONE(1)	/* Dedicated 16MB region for shader code */
 #define KBASE_REG_ZONE_EXEC_BASE    ((1ULL << 32) >> PAGE_SHIFT)
@@ -163,6 +162,8 @@ typedef struct kbase_va_region {
 		} umm;
 #endif				/* defined(CONFIG_DMA_SHARED_BUFFER) */
 	} imported_metadata;
+
+	unsigned long magic;
 
 } kbase_va_region;
 

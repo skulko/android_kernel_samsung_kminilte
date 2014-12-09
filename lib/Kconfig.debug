@@ -10,6 +10,22 @@ config PRINTK_TIME
 	  in kernel startup.  Or add printk.time=1 at boot-time.
 	  See Documentation/kernel-parameters.txt
 
+config PRINTK_PID
+	bool "Show pid on printks"
+	depends on PRINTK
+	help
+	  Selecting this option causes current task's pid to be
+	  included in printk output. Or add printk.pid=1 at boot-time.
+	  This allows you to see the running process with kernel log.
+	  See Documentation/kernel-parameters.txt
+
+config PRINTK_CORE_NUM
+	bool "Show core number on printks"
+	depends on PRINTK
+	help
+	  Selecting this option causes core number to be
+	  included in printk output. Or add printk.core_num=1 at boot-time.
+
 config DEFAULT_MESSAGE_LOGLEVEL
 	int "Default message log level (1-7)"
 	range 1 7

@@ -29,6 +29,8 @@
 #include <linux/ump.h>
 #endif				/* CONFIG_UMP */
 
+#include <linux/exynos_ion.h>
+
 #define beenthere(f, a...)  KBASE_DEBUG_PRINT_INFO(KBASE_JD, "%s:" f, __func__, ##a)
 
 /*
@@ -174,7 +176,6 @@ static mali_error kbase_jd_umm_map(kbase_context *kctx, struct kbase_va_region *
 	int i;
 	phys_addr_t *pa;
 	mali_error err;
-	size_t count = 0;
 
 	KBASE_DEBUG_ASSERT(NULL == reg->imported_metadata.umm.st);
 	st = dma_buf_map_attachment(reg->imported_metadata.umm.dma_attachment, DMA_BIDIRECTIONAL);
@@ -192,15 +193,15 @@ static mali_error kbase_jd_umm_map(kbase_context *kctx, struct kbase_va_region *
 		int j;
 		size_t pages = PFN_DOWN(sg_dma_len(s));
 
-		for (j = 0; (j < pages) && (count < reg->nr_pages); j++, count++)
+		for (j = 0; j < pages; j++)
 			*pa++ = sg_dma_address(s) + (j << PAGE_SHIFT);
-		WARN_ONCE(j < pages, "sg list returned by dma_buf_map_attachment is larger than dma_buf->size=%zu\n", reg->imported_metadata.umm.dma_buf->size);
 	}
 
 	err = kbase_mmu_insert_pages(kctx, reg->start_pfn, kbase_get_phy_pages(reg), reg->nr_alloc_pages, reg->flags | KBASE_REG_GPU_WR | KBASE_REG_GPU_RD);
 
 	if (MALI_ERROR_NONE != err) {
 		dma_buf_unmap_attachment(reg->imported_metadata.umm.dma_attachment, reg->imported_metadata.umm.st, DMA_BIDIRECTIONAL);
+		exynos_ion_sync_dmabuf_for_device(kctx->kbdev->osdev.dev, reg->imported_metadata.umm.dma_buf, reg->imported_metadata.umm.dma_buf->size, DMA_BIDIRECTIONAL);
 		reg->imported_metadata.umm.st = NULL;
 	}
 
@@ -593,6 +594,9 @@ mali_bool jd_done_nolock(kbase_jd_atom *katom)
 		for (i = 0; i < 2; i++)
 			jd_resolve_dep(&runnable_jobs, katom, i);
 
+		if (katom->core_req & BASE_JD_REQ_EXTERNAL_RESOURCES)
+			kbase_jd_post_external_resources(katom);
+
 		while (!list_empty(&runnable_jobs)) {
 			kbase_jd_atom *node = list_entry(runnable_jobs.prev, kbase_jd_atom, dep_item[0]);
 			list_del(runnable_jobs.prev);
@@ -617,9 +621,6 @@ mali_bool jd_done_nolock(kbase_jd_atom *katom)
 			if (node->status == KBASE_JD_ATOM_STATE_COMPLETED)
 				list_add_tail(&node->dep_item[0], &completed_jobs);
 		}
-
-		if (katom->core_req & BASE_JD_REQ_EXTERNAL_RESOURCES)
-			kbase_jd_post_external_resources(katom);
 
 		kbase_event_post(kctx, katom);
 
@@ -1282,9 +1283,7 @@ static enum hrtimer_restart zap_timeout_callback(struct hrtimer *timer)
 void kbase_jd_zap_context(kbase_context *kctx)
 {
 	kbase_jd_atom *katom;
-#ifdef CONFIG_KDS
 	struct list_head *entry;
-#endif
 	kbase_device *kbdev;
 	zap_reset_data reset_data;
 	unsigned long flags;
@@ -1303,11 +1302,9 @@ void kbase_jd_zap_context(kbase_context *kctx)
 	 * queued outside the job scheduler.
 	 */
 
-	while (!list_empty(&kctx->waiting_soft_jobs)) {
-		katom = list_first_entry(&kctx->waiting_soft_jobs,
-					kbase_jd_atom,
-					dep_item[0]);
-		list_del(&katom->dep_item[0]);
+	list_for_each(entry, &kctx->waiting_soft_jobs) {
+		katom = list_entry(entry, kbase_jd_atom, dep_item[0]);
+
 		kbase_cancel_soft_job(katom);
 	}
 
@@ -1400,6 +1397,9 @@ mali_error kbase_jd_init(kbase_context *kctx)
 		/* Catch userspace attempting to use an atom which doesn't exist as a pre-dependency */
 		kctx->jctx.atoms[i].event_code = BASE_JD_EVENT_JOB_INVALID;
 		kctx->jctx.atoms[i].status = KBASE_JD_ATOM_STATE_UNUSED;
+#ifdef SLSI_INTEGRATION
+		mutex_init(&kctx->jctx.atoms[i].fence_mt);
+#endif
 	}
 
 	mutex_init(&kctx->jctx.lock);
@@ -1432,6 +1432,9 @@ KBASE_EXPORT_TEST_API(kbase_jd_init)
 
 void kbase_jd_exit(kbase_context *kctx)
 {
+#ifdef SLSI_INTEGRATION
+	int i=0;
+#endif
 	KBASE_DEBUG_ASSERT(kctx);
 
 #ifdef CONFIG_KDS
@@ -1439,6 +1442,10 @@ void kbase_jd_exit(kbase_context *kctx)
 #endif				/* CONFIG_KDS */
 	/* Work queue is emptied by this */
 	destroy_workqueue(kctx->jctx.job_done_wq);
+#ifdef SLSI_INTEGRATION
+	for (i = 0; i < BASE_JD_ATOM_COUNT; i++)
+		mutex_destroy(&kctx->jctx.atoms[i].fence_mt);
+#endif
 }
 
 KBASE_EXPORT_TEST_API(kbase_jd_exit)

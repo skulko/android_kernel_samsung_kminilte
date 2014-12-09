@@ -24,6 +24,7 @@
 #include <video/s5p-dp.h>
 
 #include <plat/cpu.h>
+#include <plat/clock.h>
 
 #include "s5p-dp-core.h"
 
@@ -45,6 +46,7 @@ static int s5p_dp_init_dp(struct s5p_dp_device *dp)
 	return 0;
 }
 
+#if !defined(CONFIG_SOC_EXYNOS5260)
 static int s5p_dp_detect_hpd(struct s5p_dp_device *dp)
 {
 	int timeout_loop = 0;
@@ -64,6 +66,7 @@ static int s5p_dp_detect_hpd(struct s5p_dp_device *dp)
 
 	return 0;
 }
+#endif
 
 static unsigned char s5p_dp_calc_edid_check_sum(unsigned char *edid_data)
 {
@@ -113,8 +116,8 @@ static int s5p_dp_read_edid(struct s5p_dp_device *dp)
 		}
 		sum = s5p_dp_calc_edid_check_sum(edid);
 		if (sum != 0) {
-			dev_warn(dp->dev, "EDID bad checksum!\n");
-			return 0;
+			dev_err(dp->dev, "EDID bad checksum!\n");
+			return -EIO;
 		}
 
 		/* Read additional EDID data */
@@ -129,8 +132,8 @@ static int s5p_dp_read_edid(struct s5p_dp_device *dp)
 		}
 		sum = s5p_dp_calc_edid_check_sum(&edid[EDID_BLOCK_LENGTH]);
 		if (sum != 0) {
-			dev_warn(dp->dev, "EDID bad checksum!\n");
-			return 0;
+			dev_err(dp->dev, "EDID bad checksum!\n");
+			return -EIO;
 		}
 
 		retval = s5p_dp_read_byte_from_dpcd(dp,
@@ -172,8 +175,8 @@ static int s5p_dp_read_edid(struct s5p_dp_device *dp)
 		}
 		sum = s5p_dp_calc_edid_check_sum(edid);
 		if (sum != 0) {
-			dev_warn(dp->dev, "EDID bad checksum!\n");
-			return 0;
+			dev_err(dp->dev, "EDID bad checksum!\n");
+			return -EIO;
 		}
 
 		retval = s5p_dp_read_byte_from_dpcd(dp,
@@ -270,6 +273,7 @@ void s5p_dp_rx_control(struct s5p_dp_device *dp, bool enable)
 	}
 }
 
+#if !defined(CONFIG_SOC_EXYNOS5260)
 static int s5p_dp_is_enhanced_mode_available(struct s5p_dp_device *dp)
 {
 	u8 data;
@@ -282,7 +286,9 @@ static int s5p_dp_is_enhanced_mode_available(struct s5p_dp_device *dp)
 
 	return DPCD_ENHANCED_FRAME_CAP(data);
 }
+#endif
 
+#if defined(CONFIG_SOC_EXYNOS5250)
 static void s5p_dp_disable_rx_zmux(struct s5p_dp_device *dp)
 {
 	s5p_dp_write_byte_to_dpcd(dp,
@@ -292,7 +298,9 @@ static void s5p_dp_disable_rx_zmux(struct s5p_dp_device *dp)
 	s5p_dp_write_byte_to_dpcd(dp,
 			DPCD_ADDR_USER_DEFINED3, 0x27);
 }
+#endif
 
+#if !defined(CONFIG_SOC_EXYNOS5260)
 static int s5p_dp_set_enhanced_mode(struct s5p_dp_device *dp)
 {
 	u8 data;
@@ -311,6 +319,7 @@ static int s5p_dp_set_enhanced_mode(struct s5p_dp_device *dp)
 
 	return 0;
 }
+#endif
 
 static int s5p_dp_training_pattern_dis(struct s5p_dp_device *dp)
 {
@@ -502,7 +511,7 @@ static unsigned int s5p_dp_get_lane_link_training(
 				struct s5p_dp_device *dp,
 				int lane)
 {
-	u32 reg;
+	u32 reg = 0;
 
 	switch (lane) {
 	case 0:
@@ -1033,6 +1042,7 @@ static int s5p_dp_enable_scramble(struct s5p_dp_device *dp, bool enable)
 	return 0;
 }
 
+#if !defined(CONFIG_SOC_EXYNOS5260)
 static irqreturn_t s5p_dp_irq_handler(int irq, void *arg)
 {
 	struct s5p_dp_device *dp = arg;
@@ -1040,12 +1050,18 @@ static irqreturn_t s5p_dp_irq_handler(int irq, void *arg)
 	dev_err(dp->dev, "s5p_dp_irq_handler\n");
 	return IRQ_HANDLED;
 }
+#endif
 
 static int s5p_dp_enable(struct s5p_dp_device *dp)
 {
 	int ret = 0;
 	int retry = 0;
 	struct s5p_dp_platdata *pdata = dp->dev->platform_data;
+
+	if (pdata->clock_init) {
+		if (pdata->clock_init() < 0)
+			pr_err("failed to get disp clock\n");
+	}
 
 	mutex_lock(&dp->lock);
 
@@ -1064,21 +1080,15 @@ dp_phy_init:
 
 	s5p_dp_init_dp(dp);
 
-	if (!soc_is_exynos5250()) {
-		ret = s5p_dp_detect_hpd(dp);
-		if (ret) {
-			dev_err(dp->dev, "unable to detect hpd\n");
-			goto out;
-		}
-	}
-
 	ret = s5p_dp_handle_edid(dp);
 	if (ret) {
 		dev_err(dp->dev, "unable to handle edid\n");
 		goto out;
 	}
 
+#if defined(CONFIG_SOC_EXYNOS5250)
 	s5p_dp_disable_rx_zmux(dp);
+#endif
 
 	/* Non-enhance mode setting */
 	ret = s5p_dp_enable_scramble(dp, 0);
@@ -1095,7 +1105,9 @@ dp_phy_init:
 	s5p_dp_enable_enhanced_mode(dp, 0);
 
 	/* Rx data disable */
+#if defined(CONFIG_SOC_EXYNOS5250)
 	s5p_dp_rx_control(dp,0);
+#endif
 
        /* Link Training */
 	ret = s5p_dp_set_link_train(dp, dp->video_info->lane_count,
@@ -1106,7 +1118,9 @@ dp_phy_init:
 	}
 
 	/* Rx data enable */
+#if defined(CONFIG_SOC_EXYNOS5250)
 	s5p_dp_rx_control(dp,1);
+#endif
 
 	s5p_dp_set_lane_count(dp, dp->video_info->lane_count);
 	s5p_dp_set_link_bandwidth(dp, dp->video_info->link_rate);
@@ -1246,6 +1260,7 @@ static int __devinit s5p_dp_probe(struct platform_device *pdev)
 		goto err_req_region;
 	}
 
+#if !defined(CONFIG_SOC_EXYNOS5260)
 	dp->irq = platform_get_irq(pdev, 0);
 	if (!dp->irq) {
 		dev_err(&pdev->dev, "failed to get irq\n");
@@ -1259,6 +1274,7 @@ static int __devinit s5p_dp_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "failed to request irq\n");
 		goto err_ioremap;
 	}
+#endif
 
 	dp->video_info = pdata->video_info;
 
@@ -1279,9 +1295,11 @@ static int __devinit s5p_dp_probe(struct platform_device *pdev)
 err_fb:
 	lcd_device_unregister(dp->lcd);
 err_irq:
+#if !defined(CONFIG_SOC_EXYNOS5260)
 	free_irq(dp->irq, dp);
 err_ioremap:
 	iounmap(dp->reg_base);
+#endif
 err_req_region:
 	release_mem_region(res->start, resource_size(res));
 err_clock:
@@ -1297,8 +1315,9 @@ static int __devexit s5p_dp_remove(struct platform_device *pdev)
 {
 	struct s5p_dp_device *dp = platform_get_drvdata(pdev);
 
+#if !defined(CONFIG_SOC_EXYNOS5260)
 	free_irq(dp->irq, dp);
-
+#endif
 	lcd_device_unregister(dp->lcd);
 
 	s5p_dp_disable(dp);
@@ -1315,7 +1334,7 @@ static int __devexit s5p_dp_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int  s5p_dp_shutdown(struct platform_device *pdev)
+static void s5p_dp_shutdown(struct platform_device *pdev)
 {
 	struct s5p_dp_device *dp = platform_get_drvdata(pdev);
 	struct s5p_dp_platdata *pdata = dp->dev->platform_data;
@@ -1330,7 +1349,9 @@ static int  s5p_dp_shutdown(struct platform_device *pdev)
 
 	s5p_dp_disable(dp);
 
+#if !defined(CONFIG_SOC_EXYNOS5260)
 	free_irq(dp->irq, dp);
+#endif
 	iounmap(dp->reg_base);
 	clk_put(dp->clock);
 
@@ -1339,8 +1360,6 @@ static int  s5p_dp_shutdown(struct platform_device *pdev)
 	pm_runtime_disable(dp->dev);
 
 	kfree(dp);
-
-	return 0;
 }
 
 static struct platform_driver s5p_dp_driver = {
@@ -1363,7 +1382,11 @@ static void __exit s5p_dp_exit(void)
 	platform_driver_unregister(&s5p_dp_driver);
 }
 
+#ifdef CONFIG_FB_EXYNOS_FIMD_MC
 late_initcall(s5p_dp_init);
+#else
+module_init(s5p_dp_init);
+#endif
 module_exit(s5p_dp_exit);
 
 MODULE_AUTHOR("Jingoo Han <jg1.han@samsung.com>");

@@ -24,13 +24,13 @@
 #include <linux/clk.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
-#include <linux/usb/otg.h>
 #include <plat/regs-otg.h>
 #include <plat/usb-phy.h>
 #include <plat/udc-hs.h>
 #include <plat/cpu.h>
 
 #include "s3c_udc.h"
+#include <linux/usb/composite.h>
 
 #undef DEBUG_S3C_UDC_SETUP
 #undef DEBUG_S3C_UDC_EP0
@@ -44,6 +44,8 @@
 #define EP2_IN		2
 #define EP3_IN		3
 #define EP_MASK		0xF
+
+#define POLL_TIMEOUT	1000
 
 #define BACK2BACK_SIZE	4
 
@@ -110,6 +112,7 @@ static unsigned int ep0_fifo_size = 64;
 static unsigned int ep_fifo_size =  512;
 static unsigned int ep_fifo_size2 = 1024;
 static int reset_available = 1;
+static int pullup_state;
 
 /*
   Local declarations.
@@ -142,7 +145,8 @@ static void reconfig_usbd(void);
 static void set_max_pktsize(struct s3c_udc *dev, enum usb_device_speed speed);
 static void nuke(struct s3c_ep *ep, int status);
 static int s3c_udc_set_halt(struct usb_ep *_ep, int value);
-static void s3c_udc_update_soft_flag(void);
+static void s3c_udc_soft_connect(void);
+static void s3c_udc_soft_disconnect(void);
 
 static struct usb_ep_ops s3c_ep_ops = {
 	.enable = s3c_ep_enable,
@@ -210,12 +214,27 @@ udc_proc_read(char *page, char **start, off_t off, int count,
 #include "s3c_udc_otg_xfer_dma.c"
 
 /*
+ * is_nonswitch - whether or not switch driver.
+ *
+ * Return true if switch driver isn't.
+ */
+static inline bool is_nonswitch(void)
+{
+#if defined(CONFIG_MUIC_SM5502)||defined(CONFIG_SAMSUNG_MUIC)
+	return false;
+#else
+	return true;
+#endif
+}
+
+/*
  *	udc_disable - disable USB device controller
  */
 static void udc_disable(struct s3c_udc *dev)
 {
 	struct platform_device *pdev = dev->dev;
 	struct s3c_hsotg_plat *pdata = pdev->dev.platform_data;
+	u32 utemp;
 	DEBUG_SETUP("%s: %p\n", __func__, dev);
 
 	disable_irq(dev->irq);
@@ -228,11 +247,17 @@ static void udc_disable(struct s3c_udc *dev)
 	/* Mask the core interrupt */
 	__raw_writel(0, dev->regs + S3C_UDC_OTG_GINTMSK);
 
-	if (dev->phy)
-		usb_phy_shutdown(dev->phy);
-	else if (pdata && pdata->phy_exit)
+	/* Put the OTG device core in the disconnected state.*/
+	utemp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
+	utemp |= SOFT_DISCONNECT;
+	__raw_writel(utemp, dev->regs + S3C_UDC_OTG_DCTL);
+	udelay(20);
+	if (pdata && pdata->phy_exit)
 		pdata->phy_exit(pdev, S5P_USB_PHY_DEVICE);
 	clk_disable(dev->clk);
+#if defined(CONFIG_BATTERY_SAMSUNG)
+	s3c_udc_cable_disconnect(dev);
+#endif
 }
 
 /*
@@ -279,9 +304,7 @@ static int udc_enable(struct s3c_udc *dev)
 
 	enable_irq(dev->irq);
 	clk_enable(dev->clk);
-	if (dev->phy)
-		usb_phy_init(dev->phy);
-	else if (pdata->phy_init)
+	if (pdata->phy_init)
 		pdata->phy_init(pdev, S5P_USB_PHY_DEVICE);
 	reconfig_usbd();
 
@@ -293,42 +316,49 @@ static int udc_enable(struct s3c_udc *dev)
 	return 0;
 }
 
-static int s3c_vbus_enable(struct usb_gadget *gadget, int is_active)
+int s3c_vbus_enable(struct usb_gadget *gadget, int is_active)
 {
 	unsigned long flags;
 	struct s3c_udc *dev = container_of(gadget, struct s3c_udc, gadget);
+#if defined(CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE)
+	struct usb_composite_dev *cdev = get_gadget_data(gadget);
+#endif
+	mutex_lock(&dev->mutex);
 
-	spin_lock_irqsave(&dev->lock, flags);
 	if (dev->udc_enabled != is_active) {
 		dev->udc_enabled = is_active;
 
 		if (!is_active) {
-			s3c_udc_update_soft_flag();
+			printk(KERN_DEBUG "usb: %s is_active=%d(udc_disable)\n",
+					__func__, is_active);
+			spin_lock_irqsave(&dev->lock, flags);
+#if defined(CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE)
+			if(cdev){
+				cdev->mute_switch = 0;
+				cdev->force_disconnect = 1;
+			}
+#endif
+			stop_activity(dev, dev->driver);
 			spin_unlock_irqrestore(&dev->lock, flags);
 			udc_disable(dev);
-			spin_lock_irqsave(&dev->lock, flags);
+			wake_lock_timeout(&dev->usbd_wake_lock, HZ * 5);
+			wake_lock_timeout(&dev->usb_cb_wake_lock, HZ * 5);
 		} else {
+			printk(KERN_DEBUG "usb: %s is_active=%d(udc_enable),"
+							"softconnect=%d\n",
+					__func__, is_active, pullup_state);
+			wake_lock(&dev->usb_cb_wake_lock);
 			udc_reinit(dev);
-			spin_unlock_irqrestore(&dev->lock, flags);
-
 			udc_enable(dev);
-
-			spin_lock_irqsave(&dev->lock, flags);
-			s3c_udc_update_soft_flag();
+			if (pullup_state)
+				s3c_udc_soft_connect();
 		}
+	} else {
+		printk(KERN_INFO "usb: %s, udc_enabled : %d, is_active : %d\n",
+				__func__, dev->udc_enabled, is_active);
 	}
-	spin_unlock_irqrestore(&dev->lock, flags);
 
-	return 0;
-}
-
-static int s3c_vbus_draw(struct usb_gadget *gadget, unsigned mA)
-{
-	struct s3c_udc *dev = container_of(gadget, struct s3c_udc, gadget);
-
-	if (dev->phy)
-		return usb_phy_set_power(dev->phy, mA);
-
+	mutex_unlock(&dev->mutex);
 	return 0;
 }
 
@@ -357,6 +387,14 @@ static int s3c_udc_start(struct usb_gadget *gadget,
 
 	printk(KERN_INFO "bound driver '%s'\n",
 			driver->driver.name);
+	if (is_nonswitch()) {
+		printk(KERN_INFO "usb: udc_enable\n");
+		udc_enable(dev);
+		dev->udc_enabled = 1;
+	} else {
+		printk(KERN_INFO "usb: Skip udc_enable\n");
+	}
+
 	return 0;
 }
 
@@ -379,12 +417,43 @@ static int s3c_udc_stop(struct usb_gadget *gadget,
 	stop_activity(dev, driver);
 	spin_unlock_irqrestore(&dev->lock, flags);
 
-	udc_disable(dev);
+	if (is_nonswitch())
+		udc_disable(dev);
 
 	printk(KERN_INFO "Unregistered gadget driver '%s'\n",
 			driver->driver.name);
 
 	return 0;
+}
+
+static int poll_bit_set(void __iomem *ptr, u32 val, int timeout)
+{
+	u32 reg;
+
+	do {
+		reg = __raw_readl(ptr);
+		if (reg & val)
+			return 0;
+
+		udelay(1);
+	} while (timeout-- > 0);
+
+	return -ETIME;
+}
+
+static int poll_bit_clear(void __iomem *ptr, u32 val, int timeout)
+{
+	u32 reg;
+
+	do {
+		reg = __raw_readl(ptr);
+		if (!(reg & val))
+			return 0;
+
+		udelay(1);
+	} while (timeout-- > 0);
+
+	return -ETIME;
 }
 
 /*
@@ -394,6 +463,9 @@ static void done(struct s3c_ep *ep, struct s3c_request *req, int status)
 {
 	unsigned int stopped = ep->stopped;
 	struct device *dev = &the_controller->dev->dev;
+	u32 ep_num = ep_index(ep);
+	struct s3c_udc *udc = ep->dev;
+	u32 ctrl, ret;
 
 	DEBUG("%s: %s %p, req = %p, stopped = %d\n",
 		__func__, ep->ep.name, ep, &req->req, stopped);
@@ -406,11 +478,64 @@ static void done(struct s3c_ep *ep, struct s3c_request *req, int status)
 		status = req->req.status;
 
 	if (req->mapped) {
+		if (ep_is_in(ep)) {
+			ctrl = __raw_readl(udc->regs + S3C_UDC_OTG_DIEPCTL(ep_num));
+			if (ctrl & DEPCTL_EPENA) {
+				__raw_writel(DEPCTL_EPDIS | DEPCTL_SNAK | ctrl,
+					udc->regs + S3C_UDC_OTG_DIEPCTL(ep_num));
+				ret = poll_bit_clear(udc->regs + S3C_UDC_OTG_DIEPCTL(ep_num),
+						DEPCTL_EPENA | DEPCTL_EPDIS, POLL_TIMEOUT);
+				if (ret) {
+					dev_err(dev, "faild Endpoint disable and Set NAK\n");
+					goto out;
+				}
+
+				__raw_writel(TxFIFONum(ep_num) | TxFFlush, udc->regs + S3C_UDC_OTG_GRSTCTL);
+				ret = poll_bit_clear(udc->regs + S3C_UDC_OTG_GRSTCTL,
+						TxFFlush, POLL_TIMEOUT);
+				if (ret) {
+					dev_err(dev, "faild TX FIFO Flush\n");
+					goto out;
+				}
+			}
+		} else {
+			ctrl =  __raw_readl(udc->regs + S3C_UDC_OTG_DOEPCTL(ep_num));
+			if (ctrl & DEPCTL_EPENA) {
+				__raw_writel(__raw_readl(udc->regs + S3C_UDC_OTG_DCTL) | SGOUTNak,
+						udc->regs + S3C_UDC_OTG_DCTL);
+				ret = poll_bit_set(udc->regs + S3C_UDC_OTG_GINTSTS,
+						INT_GOUTNakEff, POLL_TIMEOUT);
+				if (ret) {
+					dev_err(dev, "failed Set Global OUT NAK\n");
+					goto out;
+				}
+
+				__raw_writel(DEPCTL_EPDIS | DEPCTL_SNAK | ctrl,
+					udc->regs + S3C_UDC_OTG_DOEPCTL(ep_num));
+				ret = poll_bit_clear(udc->regs + S3C_UDC_OTG_DOEPCTL(ep_num),
+						DEPCTL_EPENA | DEPCTL_EPDIS, POLL_TIMEOUT);
+				if (ret) {
+					dev_err(dev, "faild Endpoint disable and Set NAK\n");
+					goto out;
+				}
+
+				__raw_writel(__raw_readl(udc->regs + S3C_UDC_OTG_DCTL) | CGOUTNak,
+						udc->regs + S3C_UDC_OTG_DCTL);
+				ret = poll_bit_clear(udc->regs + S3C_UDC_OTG_GINTSTS,
+						INT_GOUTNakEff, POLL_TIMEOUT);
+				if (ret) {
+					dev_err(dev, "failed Clear Global OUT NAK\n");
+					goto out;
+				}
+			}
+		}
+out:
 		dma_unmap_single(dev, req->req.dma, req->req.length,
 			(ep->bEndpointAddress & USB_DIR_IN) ?
 				DMA_TO_DEVICE : DMA_FROM_DEVICE);
 		req->req.dma = DMA_ADDR_INVALID;
 		req->mapped = 0;
+		aligned_unmap_buf(req, ep_is_in(ep));
 	}
 
 	if (status && status != -ESHUTDOWN) {
@@ -830,45 +955,62 @@ static int s3c_udc_wakeup(struct usb_gadget *_gadget)
 	return -ENOTSUPP;
 }
 
-static void s3c_udc_update_soft_flag(void)
+static int s3c_set_selfpowered(struct usb_gadget *_gadget, int is_on)
+{
+	struct s3c_udc *dev = container_of(_gadget, struct s3c_udc, gadget);
+	unsigned long	flags;
+
+	spin_lock_irqsave(&dev->lock, flags);
+	dev->selfpowered = (is_on != 0);
+	spin_unlock_irqrestore(&dev->lock, flags);
+	return 0;
+}
+
+static void s3c_udc_soft_connect(void)
 {
 	struct s3c_udc *dev = the_controller;
-	u32 val;
+	u32 uTemp;
 
-	if (dev->udc_enabled && dev->soft_connected) {
-		val = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
-		val &= ~SOFT_DISCONNECT;
-		__raw_writel(val, dev->regs + S3C_UDC_OTG_DCTL);
-	} else {
-		val = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
-		if (!(val & SOFT_DISCONNECT)) {
-			val |= SOFT_DISCONNECT;
-			__raw_writel(val, dev->regs + S3C_UDC_OTG_DCTL);
-			stop_activity(dev, dev->driver);
-		}
-	}
+	DEBUG("[%s]\n", __func__);
+	uTemp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
+	uTemp = uTemp & ~SOFT_DISCONNECT;
+	__raw_writel(uTemp, dev->regs + S3C_UDC_OTG_DCTL);
+}
+
+static void s3c_udc_soft_disconnect(void)
+{
+	struct s3c_udc *dev = the_controller;
+	u32 uTemp;
+	unsigned long flags;
+
+	DEBUG("[%s]\n", __func__);
+
+	spin_lock_irqsave(&dev->lock, flags);
+	stop_activity(dev, dev->driver);
+	spin_unlock_irqrestore(&dev->lock, flags);
+
+	uTemp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
+	uTemp |= SOFT_DISCONNECT;
+	__raw_writel(uTemp, dev->regs + S3C_UDC_OTG_DCTL);	
 }
 
 static int s3c_udc_pullup(struct usb_gadget *gadget, int is_on)
 {
-	struct s3c_udc *dev = the_controller;
-	unsigned long flags;
+	if (is_on)
+		s3c_udc_soft_connect();
+	else
+		s3c_udc_soft_disconnect();
 
-	spin_lock_irqsave(&dev->lock, flags);
-	dev->soft_connected = is_on;
-	s3c_udc_update_soft_flag();
-	spin_unlock_irqrestore(&dev->lock, flags);
-
+	pullup_state = is_on;
 	return 0;
 }
 
 static const struct usb_gadget_ops s3c_udc_ops = {
 	.get_frame = s3c_udc_get_frame,
 	.wakeup = s3c_udc_wakeup,
-	/* current versions must always be self-powered */
+	.set_selfpowered = s3c_set_selfpowered,
 	.pullup = s3c_udc_pullup,
 	.vbus_session = s3c_vbus_enable,
-	.vbus_draw = s3c_vbus_draw,
 	.udc_start = s3c_udc_start,
 	.udc_stop = s3c_udc_stop,
 };
@@ -879,6 +1021,7 @@ static void nop_release(struct device *dev)
 }
 
 static struct s3c_udc memory = {
+	.selfpowered = true,
 	.usb_address = 0,
 
 	.gadget = {
@@ -1131,7 +1274,6 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	struct resource *res;
 	unsigned int irq;
 	int retval;
-	u32 tmp;
 
 	DEBUG("%s: %p\n", __func__, pdev);
 
@@ -1165,30 +1307,23 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	dev->regs_res = request_mem_region(res->start, resource_size(res),
-					     dev_name(&pdev->dev));
-	if (!dev->regs_res) {
-		DEBUG(KERN_ERR "cannot reserve registers\n");
-		return -ENOENT;
-	}
-
-	dev->regs = ioremap(res->start, resource_size(res));
+	dev->regs = devm_request_and_ioremap(&pdev->dev, res);
 	if (!dev->regs) {
-		DEBUG(KERN_ERR "cannot map registers\n");
-		retval = -ENXIO;
-		goto err_regs_res;
+		DEBUG(KERN_ERR "cannot request_and_map registers\n");
+		return -EADDRNOTAVAIL;
 	}
-
-	dev->phy = usb_get_transceiver();
 	udc_reinit(dev);
+	wake_lock_init(&dev->usbd_wake_lock, WAKE_LOCK_SUSPEND,
+			"usb device wake lock");
+	wake_lock_init(&dev->usb_cb_wake_lock, WAKE_LOCK_SUSPEND,
+			"usb cb wake lock");
 
-	dev->clk = clk_get(&pdev->dev, "usbotg");
+	dev->clk = clk_get(&pdev->dev, "otg");
 	if (IS_ERR(dev->clk)) {
 		dev_err(&pdev->dev, "Failed to get clock\n");
-		retval = -ENXIO;
-		goto err_irq;
+        retval = -ENXIO;
+        goto clk_dev_error;
 	}
-	clk_enable(dev->clk);
 
 	dev->usb_ctrl = dma_alloc_coherent(&pdev->dev,
 			sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
@@ -1198,15 +1333,23 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		DEBUG(KERN_ERR "%s: can't get usb_ctrl dma memory\n",
 			driver_name);
 		retval = -ENOMEM;
-		goto err_clk;
+		goto err_get_ctrl_buf;
 	}
 
+	dev->ep0_data = dma_alloc_coherent(&pdev->dev,
+			EP0_FIFO_SIZE,
+			&dev->ep0_data_dma, GFP_KERNEL);
+
+	if (!dev->ep0_data) {
+		DEBUG(KERN_ERR "%s: can't get ep0_data dma memory\n",
+			driver_name);
+		retval = -ENOMEM;
+		goto err_get_data_buf;
+	}
+
+	clk_enable(dev->clk);
 	/* Mask any interrupt left unmasked by the bootloader */
 	__raw_writel(0, dev->regs + S3C_UDC_OTG_GINTMSK);
-
-	/* Stay disconnected until vbus_session is called */
-	tmp = __raw_readl(dev->regs + S3C_UDC_OTG_DCTL);
-	__raw_writel(tmp | SOFT_DISCONNECT, dev->regs + S3C_UDC_OTG_DCTL);
 
 	/* irq setup after old hardware state is cleaned up */
 	irq = platform_get_irq(pdev, 0);
@@ -1217,7 +1360,8 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		DEBUG(KERN_ERR "%s: can't get irq %i, err %d\n", driver_name,
 		      dev->irq, retval);
 		retval = -EBUSY;
-		goto err_regs;
+		clk_disable(dev->clk);
+		goto err_irq;
 	}
 	dev->irq = irq;
 
@@ -1227,7 +1371,7 @@ static int s3c_udc_probe(struct platform_device *pdev)
 	retval = device_register(&dev->gadget.dev);
 	if (retval) {
 		dev_err(&pdev->dev, "failed to register gadget device\n");
-		goto err_add_device;
+		goto err_register_device;
 	}
 
 	retval = usb_add_gadget_udc(&pdev->dev, &dev->gadget);
@@ -1236,36 +1380,35 @@ static int s3c_udc_probe(struct platform_device *pdev)
 		goto err_add_udc;
 	}
 
-	if (dev->phy)
-		otg_set_peripheral(dev->phy->otg, &dev->gadget);
-
 	create_proc_files();
+	mutex_init(&dev->mutex);
 
 	return retval;
 
 err_add_udc:
 	device_unregister(&dev->gadget.dev);
-err_add_device:
+err_register_device:
+	free_irq(dev->irq, dev);
+err_irq:
+	dma_free_coherent(&pdev->dev,
+			EP0_FIFO_SIZE,
+			dev->ep0_data, dev->ep0_data_dma);
+err_get_data_buf:
 	dma_free_coherent(&pdev->dev,
 			sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
 			dev->usb_ctrl, dev->usb_ctrl_dma);
-err_clk:
+err_get_ctrl_buf:
 	clk_put(dev->clk);
-err_irq:
-	free_irq(dev->irq, dev);
-err_regs:
-	iounmap(dev->regs);
-err_regs_res:
-	if (dev->phy)
-		usb_put_transceiver(dev->phy);
-	release_mem_region(res->start, resource_size(res));
+clk_dev_error:
+    wake_lock_destroy(&dev->usbd_wake_lock);
+    wake_lock_destroy(&dev->usb_cb_wake_lock);
+
 	return retval;
 }
 
 static int s3c_udc_remove(struct platform_device *pdev)
 {
 	struct s3c_udc *dev = platform_get_drvdata(pdev);
-	struct resource *res;
 
 	DEBUG("%s: %p\n", __func__, pdev);
 
@@ -1274,21 +1417,23 @@ static int s3c_udc_remove(struct platform_device *pdev)
 	usb_del_gadget_udc(&dev->gadget);
 	device_unregister(&dev->gadget.dev);
 
-	if (dev->phy)
-		usb_put_transceiver(dev->phy);
 	clk_put(dev->clk);
+	if (dev->ep0_data)
+		dma_free_coherent(&pdev->dev,
+				EP0_FIFO_SIZE,
+				dev->ep0_data, dev->ep0_data_dma);
 	if (dev->usb_ctrl)
 		dma_free_coherent(&pdev->dev,
 				sizeof(struct usb_ctrlrequest)*BACK2BACK_SIZE,
 				dev->usb_ctrl, dev->usb_ctrl_dma);
 	free_irq(dev->irq, dev);
-	iounmap(dev->regs);
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	release_mem_region(res->start, resource_size(res));
 
 	platform_set_drvdata(pdev, 0);
 
 	the_controller = 0;
+	wake_lock_destroy(&dev->usbd_wake_lock);
+	wake_lock_destroy(&dev->usb_cb_wake_lock);
+	mutex_destroy(&dev->mutex);
 
 	return 0;
 }
@@ -1308,18 +1453,16 @@ static int s3c_udc_suspend(struct platform_device *pdev, pm_message_t state)
 			struct s3c_ep *ep = &dev->ep[i];
 			unsigned long flags;
 
-			if (ep->dev != NULL)
-				spin_lock_irqsave(&ep->dev->lock, flags);
+			spin_lock_irqsave(&dev->lock, flags);
 			ep->stopped = 1;
 			nuke(ep, -ESHUTDOWN);
-			if (ep->dev != NULL)
-				spin_unlock_irqrestore(&ep->dev->lock, flags);
+			spin_unlock_irqrestore(&dev->lock, flags);
 		}
 
 		if (dev->driver->disconnect)
 			dev->driver->disconnect(&dev->gadget);
 
-		if (!dev->phy)
+		if (is_nonswitch())
 			udc_disable(dev);
 	}
 
@@ -1331,10 +1474,10 @@ static int s3c_udc_resume(struct platform_device *pdev)
 	struct s3c_udc *dev = the_controller;
 
 	if (dev->driver) {
-		if (!dev->phy) {
-			udc_reinit(dev);
+		udc_reinit(dev);
+		if (is_nonswitch())
 			udc_enable(dev);
-		}
+		s3c_udc_soft_connect();
 
 		if (dev->driver->resume)
 			dev->driver->resume(&dev->gadget);

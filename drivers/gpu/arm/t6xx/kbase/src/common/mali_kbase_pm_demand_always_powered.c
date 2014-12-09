@@ -13,8 +13,6 @@
  *
  */
 
-
-
 /**
  * @file mali_kbase_pm_demand_always_powered.c
  * A demand based power management policy which keeps overall GPU power on at 

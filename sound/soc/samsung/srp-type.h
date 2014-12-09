@@ -14,11 +14,23 @@
 #define __SND_SOC_SAMSUNG_SRP_TYPE_H
 
 #ifdef CONFIG_SND_SAMSUNG_ALP
-bool srp_enabled_status(void) {return 1;}
+#include "srp_alp/srp_alp.h"
+#define srp_enabled_status()	(1)
 extern unsigned int srp_get_idma_addr(void);
+extern void srp_prepare_pm(void *info);
+extern void srp_core_reset(void);
+extern int srp_core_suspend(int num);
+extern void srp_core_resume(void);
+extern void srp_wait_for_pending(void);
+extern bool srp_fw_ready_done;
 #else
-bool srp_enabled_status(void) {return 0;}
-unsigned int srp_get_idma_addr(void) {return 0;}
+#define srp_enabled_status()	(0)
+#define srp_get_idma_addr()	(0)
+#define srp_prepare_pm(info)
+#define srp_core_reset()
+#define srp_core_suspend(num)
+#define srp_core_resume()
+#define srp_wait_for_pending()
 #endif
 
 #endif /* __SND_SOC_SAMSUNG_SRP_TYPE_H */

@@ -200,6 +200,10 @@ static int spdif_hw_params(struct snd_pcm_substream *substream,
 	}
 
 	pm_runtime_get_sync(spdif->dev);
+#ifndef CONFIG_PM_RUNTIME
+	clk_enable(spdif->pclk);
+	clk_enable(spdif->sclk);
+#endif
 	snd_soc_dai_set_dma_data(rtd->cpu_dai, substream, dma_data);
 
 	spin_lock_irqsave(&spdif->lock, flags);
@@ -299,7 +303,10 @@ static void spdif_shutdown(struct snd_pcm_substream *substream,
 	cpu_relax();
 
 	writel(clkcon & ~CLKCTL_PWR_ON, regs + CLKCON);
-
+#ifndef CONFIG_PM_RUNTIME
+	clk_disable(spdif->pclk);
+	clk_disable(spdif->sclk);
+#endif
 	pm_runtime_put_sync(spdif->dev);
 }
 
@@ -492,6 +499,7 @@ static __devexit int spdif_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_RUNTIME
 static int spdif_runtime_suspend(struct device *dev)
 {
 	struct samsung_spdif_info *spdif = dev_get_drvdata(dev);
@@ -507,14 +515,21 @@ static int spdif_runtime_suspend(struct device *dev)
 static int spdif_runtime_resume(struct device *dev)
 {
 	struct samsung_spdif_info *spdif = dev_get_drvdata(dev);
+	struct s3c_audio_pdata *spdif_pdata = dev->platform_data;
+	struct platform_device *pdev = container_of(dev, \
+				struct platform_device, dev);
 
 	dev_dbg(spdif->dev, "Entered %s\n", __func__);
 
 	clk_enable(spdif->pclk);
 	clk_enable(spdif->sclk);
 
+	if (spdif_pdata->cfg_gpio && spdif_pdata->cfg_gpio(pdev))
+		dev_err(dev, "Unable to configure gpio\n");
+
 	return 0;
 }
+#endif
 
 static const struct dev_pm_ops spdif_pmops = {
 	SET_RUNTIME_PM_OPS(

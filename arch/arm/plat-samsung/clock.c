@@ -84,39 +84,41 @@ static int clk_null_enable(struct clk *clk, int enable)
 	return 0;
 }
 
-int clk_enable(struct clk *clk)
+static int __clk_enable(struct clk *clk)
 {
-	unsigned long flags;
-
 	if (IS_ERR(clk) || clk == NULL)
 		return -EINVAL;
 
-	clk_enable(clk->parent);
-
-	spin_lock_irqsave(&clocks_lock, flags);
+	__clk_enable(clk->parent);
 
 	if ((clk->usage++) == 0) {
 		trace_clock_enable(clk->name, 1, smp_processor_id());
 		(clk->enable)(clk, 1);
 	}
 
-	spin_unlock_irqrestore(&clocks_lock, flags);
 	return 0;
 }
 
-void clk_disable(struct clk *clk)
+int clk_enable(struct clk *clk)
 {
 	unsigned long flags;
-
-	if (IS_ERR(clk) || clk == NULL)
-		return;
+	int ret;
 
 	spin_lock_irqsave(&clocks_lock, flags);
+	ret = __clk_enable(clk);
+	spin_unlock_irqrestore(&clocks_lock, flags);
+
+	return ret;
+}
+
+static void __clk_disable(struct clk *clk)
+{
+	if (IS_ERR(clk) || clk == NULL)
+		return;
 
 	if (WARN_ON(!clk->usage)) {
 		pr_err("%s: clock, %s : %s, already disabled\n", __func__,
 			clk->devname ? clk->devname : "", clk->name);
-		spin_unlock_irqrestore(&clocks_lock, flags);
 		return;
 	}
 
@@ -125,18 +127,24 @@ void clk_disable(struct clk *clk)
 		(clk->enable)(clk, 0);
 	}
 
-	spin_unlock_irqrestore(&clocks_lock, flags);
-	clk_disable(clk->parent);
+	__clk_disable(clk->parent);
+
+	return;
 }
 
+void clk_disable(struct clk *clk)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&clocks_lock, flags);
+	__clk_disable(clk);
+	spin_unlock_irqrestore(&clocks_lock, flags);
+}
 
 unsigned long clk_get_rate(struct clk *clk)
 {
 	if (IS_ERR(clk))
 		return 0;
-
-	if (clk->rate != 0)
-		return clk->rate;
 
 	if (clk->ops != NULL && clk->ops->get_rate != NULL)
 		return (clk->ops->get_rate)(clk);
@@ -210,15 +218,29 @@ int clk_set_parent(struct clk *clk, struct clk *parent)
 {
 	int ret = 0;
 	unsigned long flags;
+	struct clk *old_parent;
+	int i;
 
 	if (IS_ERR(clk))
 		return -EINVAL;
 
+	old_parent = clk->parent;
+
 	spin_lock_irqsave(&clocks_lock, flags);
+
+	if (clk->usage) {
+		for (i = 0; i < clk->usage; i++)
+			__clk_enable(parent);
+	}
 
 	if (clk->ops && clk->ops->set_parent) {
 		trace_clock_set_parent(clk->name, parent->name);
 		ret = (clk->ops->set_parent)(clk, parent);
+	}
+
+	if (clk->usage) {
+		for (i = 0; i < clk->usage; i++)
+			__clk_disable(old_parent);
 	}
 
 	spin_unlock_irqrestore(&clocks_lock, flags);
@@ -318,6 +340,9 @@ int s3c24xx_register_clock(struct clk *clk)
 {
 	if (clk->enable == NULL)
 		clk->enable = clk_null_enable;
+
+	if (clk->init)
+		clk->init(clk);
 
 	/* add to the list of available clocks */
 

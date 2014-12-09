@@ -100,18 +100,28 @@ int s5p_mfc_open_inst_cmd(struct s5p_mfc_ctx *ctx)
 {
 	struct s5p_mfc_cmd_args h2r_args;
 	unsigned int crc = 0;
-	struct s5p_mfc_dec *dec = ctx->dec_priv;
+	struct s5p_mfc_dec *dec;
 	int ret;
 
 	mfc_debug_enter();
 
+	if (!ctx) {
+		mfc_err("no mfc context to run\n");
+		return -EINVAL;
+	}
+	dec = ctx->dec_priv;
 	mfc_debug(2, "Requested codec mode: %d\n", ctx->codec_mode);
 
 	if (ctx->type == MFCINST_DECODER)
 		crc = dec->crc_enable;
 
 	memset(&h2r_args, 0, sizeof(struct s5p_mfc_cmd_args));
-	h2r_args.arg[0] = ctx->codec_mode;
+	/* init ctx-buffer by F/W */
+	if (ctx->is_drm)
+		h2r_args.arg[0] = (1 << 29) | ctx->codec_mode;
+	else
+		h2r_args.arg[0] = ctx->codec_mode;
+
 	h2r_args.arg[1] = crc << 31; /* no pixelcache */
 	h2r_args.arg[2] = ctx->ctx.ofs;
 	h2r_args.arg[3] = ctx->ctx_buf_size;

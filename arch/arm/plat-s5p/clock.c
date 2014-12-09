@@ -110,6 +110,12 @@ struct clk clk_fout_vpll = {
 	.ctrlbit	= (1 << 31),
 };
 
+/* UPLL clock output */
+struct clk clk_fout_upll = {
+	.name		= "fout_upll",
+	.id		= -1,
+};
+
 /* Possible clock sources for APLL Mux */
 static struct clk *clk_src_apll_list[] = {
 	[0] = &clk_fin_apll,
@@ -174,6 +180,28 @@ static struct clk *clk_src_dpll_list[] = {
 struct clksrc_sources clk_src_dpll = {
 	.sources	= clk_src_dpll_list,
 	.nr_sources	= ARRAY_SIZE(clk_src_dpll_list),
+};
+
+/* Possible clock sources for VPLL Mux */
+static struct clk *clk_src_vpll_list[] = {
+	[0] = &clk_fin_vpll,
+	[1] = &clk_fout_vpll,
+};
+
+struct clksrc_sources clk_src_vpll = {
+	.sources	= clk_src_vpll_list,
+	.nr_sources	= ARRAY_SIZE(clk_src_vpll_list),
+};
+
+/* Possible clock sources for UPLL Mux */
+static struct clk *clk_src_upll_list[] = {
+	[0] = &clk_fin_upll,
+	[1] = &clk_fout_upll,
+};
+
+struct clksrc_sources clk_src_upll = {
+	.sources	= clk_src_upll_list,
+	.nr_sources	= ARRAY_SIZE(clk_src_upll_list),
 };
 
 struct clk clk_vpll = {
@@ -251,9 +279,12 @@ static struct clk *s5p_clks[] __initdata = {
 	&s5p_clk_27m,
 	&clk_fout_apll,
 	&clk_fout_mpll,
-	&clk_fout_epll,
 	&clk_fout_dpll,
 	&clk_fout_vpll,
+#if defined (CONFIG_SOC_EXYNOS3250)
+	&clk_fout_epll,
+	&clk_fout_upll,
+#endif
 	&clk_vpll,
 	&clk_xusbxti,
 	&clk_xxti,

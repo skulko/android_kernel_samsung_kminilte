@@ -47,15 +47,15 @@ static int ion_chunk_heap_allocate(struct ion_heap *heap,
 	struct scatterlist *sg;
 	int ret, i;
 	unsigned long num_chunks;
-	unsigned long allocated_size;
 
 	if (ion_buffer_fault_user_mappings(buffer))
 		return -ENOMEM;
 
-	allocated_size = ALIGN(size, chunk_heap->chunk_size);
-	num_chunks = allocated_size / chunk_heap->chunk_size;
+	num_chunks = ALIGN(size, chunk_heap->chunk_size) /
+		chunk_heap->chunk_size;
+	buffer->size = num_chunks * chunk_heap->chunk_size;
 
-	if (allocated_size > chunk_heap->size - chunk_heap->allocated)
+	if (buffer->size > chunk_heap->size - chunk_heap->allocated)
 		return -ENOMEM;
 
 	table = kzalloc(sizeof(struct sg_table), GFP_KERNEL);
@@ -78,13 +78,13 @@ static int ion_chunk_heap_allocate(struct ion_heap *heap,
 	}
 
 	buffer->priv_virt = table;
-	chunk_heap->allocated += allocated_size;
+	chunk_heap->allocated += buffer->size;
 	return 0;
 err:
 	sg = table->sgl;
 	for (i -= 1; i >= 0; i--) {
 		gen_pool_free(chunk_heap->pool, page_to_phys(sg_page(sg)),
-			      sg_dma_len(sg));
+			      sg->length);
 		sg = sg_next(sg);
 	}
 	sg_free_table(table);
@@ -100,20 +100,17 @@ static void ion_chunk_heap_free(struct ion_buffer *buffer)
 	struct sg_table *table = buffer->priv_virt;
 	struct scatterlist *sg;
 	int i;
-	unsigned long allocated_size;
-
-	allocated_size = ALIGN(buffer->size, chunk_heap->chunk_size);
 
 	ion_heap_buffer_zero(buffer);
 
 	for_each_sg(table->sgl, sg, table->nents, i) {
 		if (ion_buffer_cached(buffer))
-			__dma_page_cpu_to_dev(sg_page(sg), 0, sg_dma_len(sg),
+			__dma_page_cpu_to_dev(sg_page(sg), 0, sg->length,
 					      DMA_BIDIRECTIONAL);
 		gen_pool_free(chunk_heap->pool, page_to_phys(sg_page(sg)),
-			      sg_dma_len(sg));
+			      sg->length);
 	}
-	chunk_heap->allocated -= allocated_size;
+	chunk_heap->allocated -= buffer->size;
 	sg_free_table(table);
 	kfree(table);
 }
