@@ -58,6 +58,9 @@ ktime_t alarm_expires_remaining(const struct alarm *alarm);
 
 /* Provide way to access the rtc device being used by alarmtimers */
 struct rtc_device *alarmtimer_get_rtcdev(void);
+#ifdef CONFIG_RTC_DRV_QPNP
+extern bool poweron_alarm;
+#endif
 
 /*
  * A alarmtimer is active, when it is enqueued into timerqueue or the
