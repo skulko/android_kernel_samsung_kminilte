@@ -174,6 +174,7 @@ struct ipv6_devconf {
 	__s32		accept_dad;
 	__s32		force_tllao;
 	__s32		accept_ra_prefix_route;
+	__s32		accept_ra_mtu;
 	void		*sysctl;
 };
 
@@ -215,8 +216,9 @@ enum {
 	DEVCONF_DISABLE_IPV6,
 	DEVCONF_ACCEPT_DAD,
 	DEVCONF_FORCE_TLLAO,
-	DEVCONF_ACCEPT_RA_RT_TABLE,
 	DEVCONF_ACCEPT_RA_PREFIX_ROUTE,
+	DEVCONF_ACCEPT_RA_RT_TABLE,
+	DEVCONF_ACCEPT_RA_MTU,
 	DEVCONF_MAX
 };
 
