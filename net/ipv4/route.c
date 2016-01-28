@@ -119,6 +119,8 @@
 
 #define RT_GC_TIMEOUT (300*HZ)
 
+#define uid_valid(uid) ((uid) != (uid_t) -1)
+
 static int ip_rt_max_size;
 static int ip_rt_gc_timeout __read_mostly	= RT_GC_TIMEOUT;
 static int ip_rt_gc_interval __read_mostly  = 60 * HZ;
@@ -2185,9 +2187,9 @@ static int __mkroute_input(struct sk_buff *skb,
 
 	rth->rt_key_dst	= daddr;
 	rth->rt_key_src	= saddr;
-	rth->rt_genid = rt_genid(dev_net(rth->dst.dev));
-	rth->rt_flags = flags;
-	rth->rt_type = res->type;
+	rth->rt_genid 	= rt_genid(dev_net(rth->dst.dev));
+	rth->rt_flags 	= flags;
+	rth->rt_type 	= res->type;
 	rth->rt_key_tos	= tos;
 	rth->rt_dst	= daddr;
 	rth->rt_src	= saddr;
@@ -2366,7 +2368,7 @@ local_input:
 
 	rth->rt_key_dst	= daddr;
 	rth->rt_key_src	= saddr;
-	rth->rt_genid = rt_genid(net);
+	rth->rt_genid 	= rt_genid(net);
 	rth->rt_flags 	= flags|RTCF_LOCAL;
 	rth->rt_type	= res.type;
 	rth->rt_key_tos	= tos;
@@ -2574,7 +2576,7 @@ static struct rtable *__mkroute_output(const struct fib_result *res,
 
 	rth->rt_key_dst	= orig_daddr;
 	rth->rt_key_src	= orig_saddr;
-	rth->rt_genid = rt_genid(dev_net(dev_out));
+	rth->rt_genid 	= rt_genid(dev_net(dev_out));
 	rth->rt_flags	= flags;
 	rth->rt_type	= type;
 	rth->rt_key_tos	= orig_rtos;
@@ -3013,8 +3015,8 @@ static int rt_fill_info(struct net *net,
 
 	if (rt->rt_mark)
 		NLA_PUT_BE32(skb, RTA_MARK, rt->rt_mark);
-
-	if (rt->rt_uid != (uid_t) -1)
+	
+	if (uid_valid(rt->rt_uid))
 		NLA_PUT_BE32(skb, RTA_UID, rt->rt_uid);
 
 	error = rt->dst.error;

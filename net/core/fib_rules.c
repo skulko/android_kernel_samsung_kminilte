@@ -41,7 +41,7 @@ int fib_default_rule_add(struct fib_rules_ops *ops,
 	r->uid_end = INVALID_UID;
 	r->fr_net = hold_net(ops->fro_net);
 
-	/* The lock is not required here, the list in unreacheable
+	/* The lock is not required here, the list in unreachable
 	 * at the moment this function is called */
 	list_add_tail(&r->list, &ops->rules_list);
 	return 0;

@@ -1719,6 +1719,12 @@ int cyttsp5_samsung_factory_probe(struct device *dev)
 		goto error_sysfs_create_group;
 	}
 
+	rc = sysfs_create_link(&sfd->factory_dev->kobj,
+		&cd->md.input->dev.kobj, "input");
+	if (rc < 0) {
+		tsp_debug_err(true, sfd->dev, "Failed to create symbolic link\n");
+	}
+
 	sfd->sysfs_nodes_created = true;
 
 	rc = sfd->corecmd->cmd->get_param(sfd->dev, 1,
