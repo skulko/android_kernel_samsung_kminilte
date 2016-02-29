@@ -653,19 +653,40 @@ static ssize_t sm5502_muic_show_otg_cable_type(struct device *dev,
     }
 }
 
+static int detach_otg_usb(struct sm5502_muic_data *muic_data);
+static int attach_otg_usb(struct sm5502_muic_data *muic_data,
+            enum muic_attached_dev new_dev);
+
 static ssize_t sm5502_muic_set_otg_cable_type(struct device *dev,
                 struct device_attribute *attr,
                 const char *buf, size_t count)
 {
+    struct sm5502_muic_data *muic_data = dev_get_drvdata(dev);
+        
+    int new_cable_type;
     if (!strncasecmp(buf, "BATTERY", 7)) {
-        otg_cable_type = POWER_SUPPLY_TYPE_BATTERY;
+        new_cable_type = POWER_SUPPLY_TYPE_BATTERY;
     } else if (!strncasecmp(buf, "OTG", 3)) {
-        otg_cable_type = POWER_SUPPLY_TYPE_OTG;
+        new_cable_type = POWER_SUPPLY_TYPE_OTG;
     } else if (!strncasecmp(buf, "USB", 3)) {
-        otg_cable_type = POWER_SUPPLY_TYPE_USB;
+        new_cable_type = POWER_SUPPLY_TYPE_USB;
     } else {
         pr_warn("%s: invalid value\n", __func__);
+        new_cable_type = -1;
     }
+    
+    /* set new cable type and restart USB if OTG gadget is already connected */
+    if (new_cable_type != -1 && new_cable_type != otg_cable_type) {
+        bool connected = (muic_data->attached_dev == ATTACHED_DEV_OTG_MUIC);
+        if (connected) {
+            detach_otg_usb(muic_data);
+        }
+        otg_cable_type = new_cable_type;
+        if (connected) {
+            attach_otg_usb(muic_data, ATTACHED_DEV_OTG_MUIC);
+        }
+    }
+        
     return count;
 }
 #endif
