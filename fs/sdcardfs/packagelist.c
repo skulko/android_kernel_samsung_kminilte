@@ -374,6 +374,7 @@ static ssize_t packages_attr_show(struct config_item *item,
 
 static void sdcardfs_packages_release(struct config_item *item)
 {
+
 	printk(KERN_INFO "sdcardfs: destroyed something?\n");
 	kfree(to_sdcardfs_packages(item));
 }
