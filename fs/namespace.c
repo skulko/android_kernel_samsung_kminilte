@@ -711,7 +711,7 @@ vfs_kern_mount(struct file_system_type *type, int flags, const char *name, void 
 	if (flags & MS_KERNMOUNT)
 		mnt->mnt.mnt_flags = MNT_INTERNAL;
 
-	root = mount_fs(type, flags, name, data);
+	root = mount_fs(type, flags, name, &mnt->mnt, data);
 	if (IS_ERR(root)) {
 		kfree(mnt->mnt.data);
 		free_vfsmnt(mnt);
@@ -743,6 +743,7 @@ static struct mount *clone_mnt(struct mount *old, struct dentry *root,
 	if (sb->s_op->clone_mnt_data) {
 		mnt->mnt.data = sb->s_op->clone_mnt_data(old->mnt.data);
 		if (!mnt->mnt.data) {
+			err = -ENOMEM;
 			goto out_free;
 		}
 	}
@@ -1732,7 +1733,7 @@ static int do_remount(struct path *path, int flags, int mnt_flags,
 	if (flags & MS_BIND)
 		err = change_mount_flags(path->mnt, flags);
 	else {
-		err = do_remount_sb(sb, flags, data, 0);
+		err = do_remount_sb2(path->mnt, sb, flags, data, 0);
 		br_write_lock(&vfsmount_lock);
 		propagate_remount(mnt);
 		br_write_unlock(&vfsmount_lock);
