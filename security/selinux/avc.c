@@ -58,6 +58,14 @@ struct avc_node {
 	struct rcu_head		rhead;
 };
 
+struct avc_cache {
+	struct hlist_head	slots[AVC_CACHE_SLOTS]; /* head for avc_node->list */
+	spinlock_t		slots_lock[AVC_CACHE_SLOTS]; /* lock for writes */
+	atomic_t		lru_hint;	/* LRU hint for reclaim scan */
+	atomic_t		active_nodes;
+	u32			latest_notif;	/* latest revocation notification */
+};
+
 struct avc_operation_decision_node {
 	struct operation_decision od;
 	struct list_head od_list;
@@ -66,14 +74,6 @@ struct avc_operation_decision_node {
 struct avc_operation_node {
 	struct operation ops;
 	struct list_head od_head; /* list of operation_decision_node */
-};
-
-struct avc_cache {
-	struct hlist_head	slots[AVC_CACHE_SLOTS]; /* head for avc_node->list */
-	spinlock_t		slots_lock[AVC_CACHE_SLOTS]; /* lock for writes */
-	atomic_t		lru_hint;	/* LRU hint for reclaim scan */
-	atomic_t		active_nodes;
-	u32			latest_notif;	/* latest revocation notification */
 };
 
 struct avc_callback_node {
@@ -788,7 +788,7 @@ static inline int avc_operation_audit(u32 ssid, u32 tsid, u16 tclass,
 	if (likely(!audited))
 		return 0;
 	return slow_avc_audit(ssid, tsid, tclass, requested,
-			      audited, denied, result, ad, 0);
+			audited, denied, ad, 0);
 }
 
 /**

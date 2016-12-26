@@ -376,25 +376,25 @@ static irqreturn_t abov_tk_interrupt(int irq, void *dev_id)
 			buf, info->fw_ver);
 #endif
 	} else {
-		button = buf & 0x03;
-		press = !!(buf & 0x8);
-		if (press) {
+	button = buf & 0x03;
+	press = !!(buf & 0x8);
+	if (press) {
 			input_report_key(info->input_dev,touchkey_keycode[button], 0);
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
-			dev_notice(&client->dev,
-				"key R\n");
+		dev_notice(&client->dev,
+			"key R\n");
 #else
-			dev_notice(&client->dev,
+		dev_notice(&client->dev,
 				"key R : %d(%d) ver0x%02x\n",
 				touchkey_keycode[button], buf, info->fw_ver);
 #endif
-		} else {
+	} else {
 			input_report_key(info->input_dev,touchkey_keycode[button], 1);
 #ifdef CONFIG_SAMSUNG_PRODUCT_SHIP
 			dev_notice(&client->dev,"key P\n");
 #else
 			dev_notice(&client->dev,"key P : %d(%d)\n",
-				touchkey_keycode[button], buf);
+			touchkey_keycode[button], buf);
 #endif
 	}
 }
@@ -1252,9 +1252,9 @@ static int abov_tk_fw_check(struct abov_tk_info *info)
 	if (!info->fw_update_possible)
 		return ret;
 
-		if (update || (info->fw_ver == 0) ||
+	if (update || (info->fw_ver == 0) ||
 		(info->fw_ver < info->pdata->fw_version) ||
-		(info->fw_ver == 0xFF) || (info->fw_ver == 0xFE)){
+		(info->fw_ver == 0xFF) || (info->fw_ver == 0xFE)) {
 		dev_err(&client->dev, "excute tk firmware update (0x%x -> 0x%x\n",
 			info->fw_ver, info->pdata->fw_version);
 		ret = abov_flash_fw(info, true, BUILT_IN);
