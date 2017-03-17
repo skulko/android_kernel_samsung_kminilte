@@ -75,6 +75,8 @@ void get_derived_permission_new(struct dentry *parent, struct dentry *dentry,
 	struct qstr q_obb = QSTR_LITERAL("obb");
 	struct qstr q_media = QSTR_LITERAL("media");
 	struct qstr q_cache = QSTR_LITERAL("cache");
+	unsigned long user_num;
+	int err;
 	struct qstr q_Android = QSTR_LITERAL("Android");
 	struct qstr q_data = QSTR_LITERAL("data");
 	struct qstr q_obb = QSTR_LITERAL("obb");
@@ -218,7 +220,11 @@ void get_derived_permission_new(struct dentry *parent, struct dentry *dentry,
 	case PERM_PRE_ROOT:
 		/* Legacy internal layout places users at top level */
 		info->perm = PERM_ROOT;
-		info->userid = simple_strtoul(name->name, NULL, 10);
+		err = kstrtoul(name->name, 10, &user_num);
+		if (err)
+			info->userid = 0;
+		else
+			info->userid = user_num;
 		set_top(info, &info->vfs_inode);
 		break;
 	case PERM_ROOT:
