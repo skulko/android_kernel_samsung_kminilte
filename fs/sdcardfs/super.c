@@ -26,23 +26,6 @@
  */
 static struct kmem_cache *sdcardfs_inode_cachep;
 
-/*
- * To support the top references, we must track some data separately.
- * An sdcardfs_inode_info always has a reference to its data, and once set up,
- * also has a reference to its top. The top may be itself, in which case it
- * holds two references to its data. When top is changed, it takes a ref to the
- * new data and then drops the ref to the old data.
- */
-static struct kmem_cache *sdcardfs_inode_data_cachep;
-
-void data_release(struct kref *ref)
-{
-	struct sdcardfs_inode_data *data =
-		container_of(ref, struct sdcardfs_inode_data, refcount);
-
-	kmem_cache_free(sdcardfs_inode_data_cachep, data);
-}
-
 /* final actions when unmounting a file system */
 static void sdcardfs_put_super(struct super_block *sb)
 {
@@ -81,7 +64,7 @@ static int sdcardfs_statfs(struct dentry *dentry, struct kstatfs *buf)
 	if (sbi->options.reserved_mb) {
 		/* Invalid statfs informations. */
 		if (buf->f_bsize == 0) {
-			pr_err("Returned block size is zero.\n");
+			printk(KERN_ERR "Returned block size is zero.\n");
 			return -EINVAL;
 		}
 
@@ -117,7 +100,8 @@ static int sdcardfs_remount_fs(struct super_block *sb, int *flags, char *options
 	 * SILENT, but anything else left over is an error.
 	 */
 	if ((*flags & ~(MS_RDONLY | MS_MANDLOCK | MS_SILENT)) != 0) {
-		pr_err("sdcardfs: remount flags 0x%x unsupported\n", *flags);
+		printk(KERN_ERR
+		       "sdcardfs: remount flags 0x%x unsupported\n", *flags);
 		err = -EINVAL;
 	}
 
@@ -183,7 +167,6 @@ static void sdcardfs_evict_inode(struct inode *inode)
 	struct inode *lower_inode;
 
 	truncate_inode_pages(&inode->i_data, 0);
-	set_top(SDCARDFS_I(inode), NULL);
 	end_writeback(inode);
 	/*
 	 * Decrement a reference to a lower_inode, which was incremented
@@ -191,13 +174,13 @@ static void sdcardfs_evict_inode(struct inode *inode)
 	 */
 	lower_inode = sdcardfs_lower_inode(inode);
 	sdcardfs_set_lower_inode(inode, NULL);
+	set_top(SDCARDFS_I(inode), inode);
 	iput(lower_inode);
 }
 
 static struct inode *sdcardfs_alloc_inode(struct super_block *sb)
 {
 	struct sdcardfs_inode_info *i;
-	struct sdcardfs_inode_data *d;
 
 	i = kmem_cache_alloc(sdcardfs_inode_cachep, GFP_KERNEL);
 	if (!i)
@@ -206,34 +189,13 @@ static struct inode *sdcardfs_alloc_inode(struct super_block *sb)
 	/* memset everything up to the inode to 0 */
 	memset(i, 0, offsetof(struct sdcardfs_inode_info, vfs_inode));
 
-	d = kmem_cache_alloc(sdcardfs_inode_data_cachep,
-					GFP_KERNEL | __GFP_ZERO);
-	if (!d) {
-		kmem_cache_free(sdcardfs_inode_cachep, i);
-		return NULL;
-	}
-
-	i->data = d;
-	kref_init(&d->refcount);
-	i->top_data = d;
-	spin_lock_init(&i->top_lock);
-	kref_get(&d->refcount);
-
 	i->vfs_inode.i_version = 1;
 	return &i->vfs_inode;
 }
 
-static void i_callback(struct rcu_head *head)
-{
-	struct inode *inode = container_of(head, struct inode, i_rcu);
-
-	release_own_data(SDCARDFS_I(inode));
-	kmem_cache_free(sdcardfs_inode_cachep, SDCARDFS_I(inode));
-}
-
 static void sdcardfs_destroy_inode(struct inode *inode)
 {
-	call_rcu(&inode->i_rcu, i_callback);
+	kmem_cache_free(sdcardfs_inode_cachep, SDCARDFS_I(inode));
 }
 
 /* sdcardfs inode cache constructor */
@@ -246,30 +208,20 @@ static void init_once(void *obj)
 
 int sdcardfs_init_inode_cache(void)
 {
+	int err = 0;
+
 	sdcardfs_inode_cachep =
 		kmem_cache_create("sdcardfs_inode_cache",
 				  sizeof(struct sdcardfs_inode_info), 0,
 				  SLAB_RECLAIM_ACCOUNT, init_once);
-
 	if (!sdcardfs_inode_cachep)
-		return -ENOMEM;
-
-	sdcardfs_inode_data_cachep =
-		kmem_cache_create("sdcardfs_inode_data_cache",
-				  sizeof(struct sdcardfs_inode_data), 0,
-				  SLAB_RECLAIM_ACCOUNT, NULL);
-	if (!sdcardfs_inode_data_cachep) {
-		kmem_cache_destroy(sdcardfs_inode_cachep);
-		return -ENOMEM;
-	}
-
-	return 0;
+		err = -ENOMEM;
+	return err;
 }
 
 /* sdcardfs inode cache destructor */
 void sdcardfs_destroy_inode_cache(void)
 {
-	kmem_cache_destroy(sdcardfs_inode_data_cachep);
 	kmem_cache_destroy(sdcardfs_inode_cachep);
 }
 
@@ -300,15 +252,11 @@ static int sdcardfs_show_options(struct vfsmount *mnt, struct seq_file *m,
 	if (vfsopts->gid != 0)
 		seq_printf(m, ",gid=%u", vfsopts->gid);
 	if (opts->multiuser)
-		seq_puts(m, ",multiuser");
+		seq_printf(m, ",multiuser");
 	if (vfsopts->mask)
 		seq_printf(m, ",mask=%u", vfsopts->mask);
 	if (opts->fs_user_id)
 		seq_printf(m, ",userid=%u", opts->fs_user_id);
-	if (opts->gid_derivation)
-		seq_puts(m, ",derive_gid");
-	if (opts->default_normal)
-		seq_puts(m, ",default_normal");
 	if (opts->reserved_mb != 0)
 		seq_printf(m, ",reserved=%uMB", opts->reserved_mb);
 
