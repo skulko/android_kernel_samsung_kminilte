@@ -1054,7 +1054,7 @@ static void s3c24xx_serial_pm(struct uart_port *port, unsigned int level,
 		umcon &= ~(S3C2410_UMCOM_AFC | S3C2410_UMCOM_RTS_LOW);
 		wr_regl(port, S3C2410_UMCON, umcon);
 
-		if (!IS_ERR(ourport->baudclk))
+		if (!IS_ERR(ourport->baudclk) && ourport->baudclk != NULL)
 			clk_disable(ourport->baudclk);
 
 		clk_disable(ourport->clk);
@@ -1065,7 +1065,7 @@ static void s3c24xx_serial_pm(struct uart_port *port, unsigned int level,
 		aud_uart_get_sync(ourport);
 		clk_enable(ourport->clk);
 
-		if (!IS_ERR(ourport->baudclk))
+		if (!IS_ERR(ourport->baudclk) && ourport->baudclk != NULL)
 			clk_enable(ourport->baudclk);
 
 		if (ourport->cfg->is_aud_uart && ourport->cfg->cfg_gpio) {
