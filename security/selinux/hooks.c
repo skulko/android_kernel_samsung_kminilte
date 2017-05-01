@@ -1370,7 +1370,8 @@ static int inode_doinit_with_dentry(struct inode *inode, struct dentry *opt_dent
 			if (!dentry)
 				goto out_unlock;
 			isec->sclass = inode_mode_to_security_class(inode->i_mode);
-			rc = selinux_proc_get_sid(dentry, isec->sclass, &sid);
+			rc = selinux_genfs_get_sid(dentry, isec->sclass,
+			                   sbsec->flags, &sid);
 			dput(dentry);
 			if (rc)
 				goto out_unlock;
