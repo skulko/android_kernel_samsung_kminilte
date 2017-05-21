@@ -83,7 +83,10 @@
 #include <linux/export.h>
 #include <linux/msg.h>
 #include <linux/shm.h>
-#include <linux/pft.h>
+
+// [ SEC_SELINUX_PORTING COMMON
+#include <linux/delay.h>
+// ] SEC_SELINUX_PORTING COMMON
 
 #include "avc.h"
 #include "objsec.h"
@@ -433,7 +436,7 @@ static int sb_finish_set_opts(struct super_block *sb)
 	    !strcmp(sb->s_type->name, "debugfs") ||
 	    !strcmp(sb->s_type->name, "rootfs"))
 		sbsec->flags |= SE_SBLABELSUPP;
-
+		
 	/* Initialize the root inode. */
 	rc = inode_doinit_with_dentry(root_inode, root);
 
