@@ -129,7 +129,8 @@ static int ipv4_ping_group_range(ctl_table *table, int write,
 
 /* Validate changes from /proc interface. */
 static int proc_tcp_default_init_rwnd(ctl_table *ctl, int write,
-				      void __user *buffer, size_t *lenp, loff_t *ppos)
+				      void __user *buffer,
+				      size_t *lenp, loff_t *ppos)
 {
 	int old_value = *(int *)ctl->data;
 	int ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
@@ -612,6 +613,13 @@ static struct ctl_table ipv4_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec
 	},
+	{
+		.procname	= "tcp_challenge_ack_limit",
+		.data		= &sysctl_tcp_challenge_ack_limit,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec
+	},
 #ifdef CONFIG_NET_DMA
 	{
 		.procname	= "tcp_dma_copybreak",
@@ -691,7 +699,7 @@ static struct ctl_table ipv4_table[] = {
 		.mode           = 0644,
 		.proc_handler   = proc_dointvec
 	},
-    {
+	{
 		.procname       = "tcp_thin_dupack",
 		.data           = &sysctl_tcp_thin_dupack,
 		.maxlen         = sizeof(int),
