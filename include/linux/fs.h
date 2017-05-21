@@ -115,13 +115,10 @@ struct inodes_stat_t {
 #define FMODE_PATH		((__force fmode_t)0x4000)
 
 /* File hasn't page cache and can't be mmaped, for stackable filesystem */
-#define FMODE_NONMAPPABLE        ((__force fmode_t)0x400000)
+#define FMODE_NONMAPPABLE       ((__force fmode_t)0x400000)
 
 /* File page don't need to be cached, for stackable filesystem's lower file */
 #define FMODE_NONCACHEABLE		((__force fmode_t)0x800000)
-
-/* File hasn't page cache and can't be mmaped, for stackable filesystem */
-#define FMODE_NONMAPPABLE       ((__force fmode_t)0x400000)
 
 /* File was opened by fanotify and shouldn't generate fanotify events */
 #define FMODE_NONOTIFY		((__force fmode_t)0x1000000)
@@ -1656,7 +1653,7 @@ struct file_operations {
 	int (*setlease)(struct file *, long, struct file_lock **);
 	long (*fallocate)(struct file *file, int mode, loff_t offset,
 			  loff_t len);
-		/* get_lower_file is for stackable file system */
+	/* get_lower_file is for stackable file system */
 	struct file* (*get_lower_file)(struct file *f);
 };
 
