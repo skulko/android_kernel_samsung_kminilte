@@ -40,6 +40,7 @@
 #include <linux/syscore_ops.h>
 #include <linux/version.h>
 #include <linux/ctype.h>
+
 #include <linux/mm.h>
 #include <linux/mempolicy.h>
 #include <linux/sched.h>
@@ -2249,6 +2250,8 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		case PR_SET_VMA:
 			error = prctl_set_vma(arg2, arg3, arg4, arg5);
 			break;
+		/* remove this case because of sidesync call mute for H-projects */
+
 		case PR_SET_TIMERSLACK_PID:
 			if (task_pid_vnr(current) != (pid_t)arg3 &&
 					!capable(CAP_SYS_NICE))
@@ -2272,7 +2275,6 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		case PR_SET_NO_NEW_PRIVS:
 			if (arg2 != 1 || arg3 || arg4 || arg5)
 				return -EINVAL;
-
 			task_set_no_new_privs(current);
 			break;
 		case PR_GET_NO_NEW_PRIVS:
