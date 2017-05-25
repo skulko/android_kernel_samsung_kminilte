@@ -372,6 +372,7 @@ static struct hlist_head *css_set_hash(struct cgroup_subsys_state *css[])
 
 	return &css_set_table[index];
 }
+
 /* We don't maintain the lists running through each css_set to its
  * task until after the first call to cgroup_iter_start(). This
  * reduces the fork()/exit() overhead for people who have cgroups
@@ -390,6 +391,7 @@ static void put_css_set(struct css_set *cg)
 {
 	struct cg_cgroup_link *link;
 	struct cg_cgroup_link *saved_link;
+
 	/*
 	 * Ensure that the refcount doesn't hit zero while any readers
 	 * can see it. Similar to atomic_dec_and_lock(), but for an
@@ -417,6 +419,7 @@ static void put_css_set(struct css_set *cg)
 			cgroup_wakeup_rmdir_waiter(cgrp);
 		}
 		rcu_read_unlock();
+
 		kfree(link);
 	}
 	write_unlock(&css_set_lock);
