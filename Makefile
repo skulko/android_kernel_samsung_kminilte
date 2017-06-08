@@ -347,7 +347,7 @@ CHECK		= sparse
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
-KERNELFLAGS	= -pipe -DNDEBUG -O3 -mtune=cortex-a7 -mcpu=cortex-a7 -mfpu=neon-vfpv4 -fgraphite -floop-parallelize-all -ftree-loop-linear -floop-interchange -floop-strip-mine -floop-block -floop-flatten -funswitch-loops -funsafe-math-optimizations -funsafe-loop-optimizations -funroll-loops -frename-registers -frerun-cse-after-loop -fira-loop-pressure -fforce-addr -ffast-math -ftree-loop-distribution -fsection-anchors -ftree-loop-im -ftree-loop-ivcanon -fmodulo-sched -fmodulo-sched-allow-regmoves -ftracer -Wno-error=unused-parameter -Wno-error=unused-but-set-variable -Wno-error=maybe-uninitialized -ffunction-sections -fgcse-after-reload -fgcse-las -fgcse-sm -fweb -ffp-contract=fast -ftree-vectorize
+KERNELFLAGS	= -pipe -DNDEBUG -O3 -munaligned-access -mtune=cortex-a7 -mcpu=cortex-a7 -mfpu=neon-vfpv4 -fsingle-precision-constant -fgraphite -floop-parallelize-all -ftree-loop-linear -floop-interchange -floop-strip-mine -floop-block -floop-flatten -funswitch-loops -funsafe-math-optimizations -funsafe-loop-optimizations -funroll-loops -frename-registers -frerun-cse-after-loop -fira-loop-pressure -fforce-addr -ffast-math -ftree-loop-distribution -fsection-anchors -ftree-loop-im -ftree-loop-ivcanon -fmodulo-sched -fmodulo-sched-allow-regmoves -ftracer -Wno-error=unused-parameter -Wno-error=unused-but-set-variable -Wno-error=maybe-uninitialized -ffunction-sections -fgcse-after-reload -fgcse-las -fgcse-sm -fweb -ffp-contract=fast -ftree-vectorize
 CFLAGS_MODULE   =
 AFLAGS_MODULE   =
 LDFLAGS_MODULE  =
