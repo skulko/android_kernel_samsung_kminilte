@@ -53,10 +53,10 @@
 #endif
 
 #ifdef CONFIG_VIDEO_EXYNOS_FIMC_IS
-#define MALI_DVFS_STEPS 5
+#define MALI_DVFS_STEPS 6
 #define MALI_DVFS_MAIN_CLOCK 900
 #else
-#define MALI_DVFS_STEPS 6
+#define MALI_DVFS_STEPS 7
 #endif
 #define MALI_DVFS_WATING 10 /* msec */
 #define MALI_DVFS_DEFAULT_STEP 1
@@ -102,6 +102,7 @@ mali_dvfs_table mali_dvfs[MALI_DVFS_STEPS]={
       /*step 2*/{300, 1000000,  925000, 70,  75},
       /*step 3*/{450, 1000000, 1000000, 75,  85},
       /*step 4*/{533, 1000000, 1050000, 85, 100};
+      /*step 5*/{600 ,1000000, 1100000, 90, 95},
  };
 #else
 mali_runtime_resume_table mali_runtime_resume = {266, 900000, 1};
@@ -114,6 +115,7 @@ mali_dvfs_table mali_dvfs[MALI_DVFS_STEPS]={
  	/*step 3*/{340, 1000000,  950000, 75,  80},
  	/*step 4*/{440, 1000000, 1000000, 80,  90},
  	/*step 5*/{533, 1000000, 1050000, 90, 100};
+ 	/*step 6*/{600  ,1000000, 1100000, 90, 95},
 #endif
 
 #define EXTXTALCLK_NAME  "ext_xtal"
@@ -140,11 +142,11 @@ static struct clk *mali_clock = NULL;
 #ifdef CONFIG_VIDEO_EXYNOS_FIMC_IS
 int mali_gpu_clk = 225;
 int mali_gpu_vol = 900000;
-char *mali_freq_table = "533 450 300 225 150";
+char *mali_freq_table = "600 533 450 300 225 150";
 #else
 int mali_gpu_clk = 266;
 int mali_gpu_vol = 900000;
-cchar *mali_freq_table = "533 440 340 300 266 160";
+cchar *mali_freq_table = "600 533 440 340 300 266 160";
 #endif
 
 static unsigned int GPU_MHZ	= 1000000;
