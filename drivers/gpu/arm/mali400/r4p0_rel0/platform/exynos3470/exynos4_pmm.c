@@ -62,8 +62,8 @@ static struct pm_qos_request mif_min_qos;
 #include <mach/regs-pmu.h>
 #include <linux/workqueue.h>
 
-#define MALI_DVFS_STEPS 5
-#define MALI_DVFS_STEPS_ISP 4
+#define MALI_DVFS_STEPS 6
+#define MALI_DVFS_STEPS_ISP 5
 #define MALI_DVFS_WATING 10 /* msec */
 #define MALI_DVFS_DEFAULT_STEP 0
 #define MALI_DVFS_DEFAULT_STEP_ISP 3
@@ -160,6 +160,12 @@ mali_dvfs_table mali_dvfs_isp[MALI_DVFS_STEPS_ISP] = {
 #ifdef BUSFREQ_QOS_LOCK
 		/* mif_min_lock_value */
 		, 267000
+#endif
+	},
+	/* step 4 */{533, 1000000, 1050000,  95, 100
+#ifdef BUSFREQ_QOS_LOCK
+                /* mif_min_lock_value */
+                , 267000
 #endif
 	} };
 
