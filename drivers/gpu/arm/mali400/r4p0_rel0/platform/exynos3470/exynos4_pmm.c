@@ -62,8 +62,8 @@ static struct pm_qos_request mif_min_qos;
 #include <mach/regs-pmu.h>
 #include <linux/workqueue.h>
 
-#define MALI_DVFS_STEPS 6
-#define MALI_DVFS_STEPS_ISP 5
+#define MALI_DVFS_STEPS 7
+#define MALI_DVFS_STEPS_ISP 6
 #define MALI_DVFS_WATING 10 /* msec */
 #define MALI_DVFS_DEFAULT_STEP 0
 #define MALI_DVFS_DEFAULT_STEP_ISP 3
@@ -134,6 +134,12 @@ mali_dvfs_table mali_dvfs[MALI_DVFS_STEPS] = {
 		/* mif_min_lock_value */
 		, 267000
 #endif
+	},
+        /* step 5 */{600, 1000000,  1100000,  90,  95
+#ifdef BUSFREQ_QOS_LOCK
+              /* mif_min_lock_value */
+               , 267000
+#endif               
 	} };
 
 /* dvfs table updated on 140314 */
@@ -167,6 +173,12 @@ mali_dvfs_table mali_dvfs_isp[MALI_DVFS_STEPS_ISP] = {
                 /* mif_min_lock_value */
                 , 267000
 #endif
+	},
+	/* step 5 */{600, 1000000, 1050000,  95, 100
+#ifdef BUSFREQ_QOS_LOCK
+                /* mif_min_lock_value */
+                , 267000
+#endif
 	} };
 
 /* Exynos3470 */
@@ -175,7 +187,7 @@ int mali_gpu_vol = 850000;
 unsigned int mali_vpll_clk = 900;
 int mali_min_freq;
 int mali_max_freq;
-char *mali_freq_table = "533 440 340 266 160";
+char *mali_freq_table = "600 533 440 340 266 160";
 #define EXTXTALCLK_NAME  "ext_xtal"
 #define VPLLSRCCLK_NAME  "vpll_src"
 #define FOUTVPLLCLK_NAME "fout_vpll"
