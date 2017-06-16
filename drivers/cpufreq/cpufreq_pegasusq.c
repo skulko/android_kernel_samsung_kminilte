@@ -324,8 +324,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		prev_idle_time = j_dbs_info->prev_cpu_idle;
 		prev_iowait_time = j_dbs_info->prev_cpu_iowait;
 
-	//	cur_idle_time = get_cpu_idle_time(j, &cur_wall_time,
-	//			0);
+		cur_idle_time = get_cpu_idle_time(j, &cur_wall_time,
+				0);
 		cur_iowait_time = get_cpu_iowait_time(j, &cur_wall_time);
 
 		wall_time = (unsigned int)
@@ -538,9 +538,9 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			j_dbs_info = &per_cpu(od_cpu_dbs_info, j);
 			j_dbs_info->cur_policy = policy;
 
-	//		j_dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
+			j_dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
 						&j_dbs_info->prev_cpu_wall,
-	//					0);
+						0);
 
 			prev_load = (unsigned int)
 				(j_dbs_info->prev_cpu_wall - j_dbs_info->prev_cpu_idle);

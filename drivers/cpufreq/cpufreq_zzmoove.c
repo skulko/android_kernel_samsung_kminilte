@@ -3456,11 +3456,11 @@ static ssize_t store_ignore_nice_load(struct kobject *a, struct attribute *b, co
 	for_each_online_cpu(j) {
 		 struct cpu_dbs_info_s *dbs_info;
 		 dbs_info = &per_cpu(cs_cpu_dbs_info, j);
-		 dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
+		 dbs_info->prev_cpu_idle = get_cpu_idle_time(j, 0,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0) || defined(CPU_IDLE_TIME_IN_CPUFREQ) /* overrule for sources with backported cpufreq implementation */
 		 &dbs_info->prev_cpu_wall, 0);
 #else
-		 &dbs_info->prev_cpu_wall);
+		 dbs_info->prev_cpu_wall);
 #endif /* LINUX_VERSION_CODE... */
 		 if (dbs_tuners_ins.ignore_nice)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0)
@@ -5937,7 +5937,7 @@ static inline int set_profile(int profile_num)
 		for_each_online_cpu(j) {
 		     struct cpu_dbs_info_s *dbs_info;
 		     dbs_info = &per_cpu(cs_cpu_dbs_info, j);
-		     dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
+		     dbs_info->prev_cpu_idle = get_cpu_idle_time(j, 0,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0) || defined(CPU_IDLE_TIME_IN_CPUFREQ) /* overrule for sources with backported cpufreq implementation */
 		 &dbs_info->prev_cpu_wall, 0);
 #else
@@ -7259,7 +7259,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 		j_dbs_info = &per_cpu(cs_cpu_dbs_info, j);
 
-		cur_idle_time = get_cpu_idle_time(j,
+		cur_idle_time = get_cpu_idle_time(j, 0,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0) || defined(CPU_IDLE_TIME_IN_CPUFREQ)	/* overrule for sources with backported cpufreq implementation */
 		     &cur_wall_time, 0);
 #else
@@ -8705,7 +8705,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			j_dbs_info = &per_cpu(cs_cpu_dbs_info, j);
 			j_dbs_info->cur_policy = policy;
 
-			j_dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
+			j_dbs_info->prev_cpu_idle = get_cpu_idle_time(j, 0,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0) || defined(CPU_IDLE_TIME_IN_CPUFREQ)	/* ZZ: overrule for sources with backported cpufreq implementation */
 			&j_dbs_info->prev_cpu_wall, 0);
 #else
@@ -8971,7 +8971,7 @@ static int __init cpufreq_gov_dbs_init(void)						// ZZ: idle exit time handling
 {
     unsigned int i;
     struct cpu_dbs_info_s *this_dbs_info;
-    // Initalize per-cpu data:
+   // Initalize per-cpu data:
     for_each_possible_cpu(i) {
 	this_dbs_info = &per_cpu(cs_cpu_dbs_info, i);
 	this_dbs_info->time_in_idle = 0;

@@ -525,7 +525,7 @@ static void alucard_check_cpu(struct cpufreq_alucard_cpuinfo *this_alucard_cpuin
 		unsigned int load_freq;
 		int freq_avg;
 		
-	//	cur_idle_time = get_cpu_idle_time(j, &cur_wall_time, 0);
+		cur_idle_time = get_cpu_idle_time(j, &cur_wall_time, 0);
 
 		wall_time = (unsigned int)
 			(cur_wall_time - j_alucard_cpuinfo->prev_cpu_wall);
@@ -704,8 +704,8 @@ static int cpufreq_governor_alucard(struct cpufreq_policy *policy,
 			struct cpufreq_alucard_cpuinfo *j_alucard_cpuinfo = &per_cpu(od_alucard_cpuinfo, j);
 			unsigned int prev_load;
 
-	//		j_alucard_cpuinfo->prev_cpu_idle = get_cpu_idle_time(j,
-		//		&j_alucard_cpuinfo->prev_cpu_wall, 0);
+			j_alucard_cpuinfo->prev_cpu_idle = get_cpu_idle_time(j,
+				&j_alucard_cpuinfo->prev_cpu_wall, 0);
 
 			prev_load = (unsigned int)
 				(j_alucard_cpuinfo->prev_cpu_wall -

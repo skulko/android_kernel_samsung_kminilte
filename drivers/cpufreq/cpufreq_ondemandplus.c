@@ -824,8 +824,8 @@ static int cpufreq_governor_ondemandplus(struct cpufreq_policy *policy,
                         pcpu->target_freq = policy->cur;
                         pcpu->freq_table = freq_table;
                         pcpu->target_set_time_in_idle =
-       //                         get_cpu_idle_time(j,
-             //                                &pcpu->target_set_time, 0);
+                        get_cpu_idle_time(j,
+                        &pcpu->target_set_time, 0);
                         pcpu->governor_enabled = 1;
                         smp_wmb();
                 }
