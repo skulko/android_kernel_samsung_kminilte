@@ -1,7 +1,4 @@
-#
-# Automatically generated file; DO NOT EDIT.
-# Linux/arm 3.4.39 Kernel Configuration
-#
+
 CONFIG_ARM=y
 CONFIG_HAVE_PWM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
