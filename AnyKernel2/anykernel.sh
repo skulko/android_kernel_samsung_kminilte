@@ -7,8 +7,9 @@ properties() {
 kernel.string=by spookcity138 @ xda-developers
 do.devicecheck=1
 do.modules=0
+do.sqlite=1
 do.init.d=0
-#do.binaries=1
+do.binaries=0
 do.synapse=0
 do.cleanup=1
 do.cleanuponabort=0

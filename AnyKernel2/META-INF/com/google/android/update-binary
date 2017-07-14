@@ -35,7 +35,7 @@ abort() {
 # Actions
 show_progress 1.34 4;
 ui_print " ";
-ui_print "------------- ~ Spookcity_Kernel ~ -------------- ";
+ui_print "----------- ~ Spookcity_Kernel v2.0~ ------------ ";
 ui_print "                                                  ";
 ui_print "                                                  ";
 ui_print "           For Samsung S5-Mini_G800F/M/Y          ";
@@ -114,6 +114,14 @@ if [ "$(file_getprop /tmp/anykernel/anykernel.sh do.synapse)" == 1 ]; then
   ui_print "Installing Synapse...";
   cp -fvr /tmp/anykernel/system/* /system;
   set_perm_recursive 0 0 755 644 /system/priv-app;
+  mount -t auto -o ro,remount /system;
+fi;
+
+if [ "$(file_getprop /tmp/anykernel/anykernel.sh do.sqlite)" == 1 ]; then
+  mount -t auto -o rw,remount /system;
+  ui_print "Updating Sqlite3...";
+  cp -fvr /tmp/anykernel/system/xbin/sqlite3 /system/xbin/sqlite3;
+  set_perm_recursive 0 0 755 755 /system/xbin;
   mount -t auto -o ro,remount /system;
 fi;
 
