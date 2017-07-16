@@ -24,6 +24,8 @@
 #include <linux/kobject.h>
 #include <linux/sysfs.h>
 
+#include <linux/sysfs_helpers.h>
+
 #include <mach/cpufreq.h>
 #include <mach/asv-exynos.h>
 #include <mach/tmu.h>
@@ -32,6 +34,9 @@
 #include <plat/cpu.h>
 
 #define VOLT_RANGE_STEP		25000
+#define MIN_VOLT 600000
+#define MAX_VOLT_ 1600000
+#define VOLT_DIV		6250
 
 #ifdef CONFIG_SMP
 struct lpj_info {
@@ -47,6 +52,7 @@ static unsigned int freq_max;
 static unsigned int freq_min;
 
 static struct exynos_dvfs_info *exynos_info;
+unsigned int	*default_volt_table;
 
 static struct regulator *arm_regulator;
 static unsigned int volt_offset;
@@ -562,6 +568,111 @@ static ssize_t show_freq_table(struct kobject *kobj,
 	return count;
 }
 
+/*
+static size_t show_UV_uV_table(struct cpufreq_policy *policy, char *buf) {
+ 	int i, len = 0;
+	if (buf)
+	{
+		for (i = exynos_info->max_support_idx; i<=exynos_info->min_support_idx; i++)
+		{
+			if(exynos_info->freq_table[i].frequency==CPUFREQ_ENTRY_INVALID) continue;
+			len += sprintf(buf + len, "%d %d \n", 
+				exynos_info->freq_table[i].frequency/1000,
+				exynos_info->volt_table[i]);
+		}
+	}
+	return len;
+}
+
+static ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf) {
+	int i, len = 0;
+	if (buf)
+	{
+		for (i = exynos_info->max_support_idx; i<=exynos_info->min_support_idx; i++)
+		{
+			if(exynos_info->freq_table[i].frequency==CPUFREQ_ENTRY_INVALID) continue;
+			len += sprintf(buf + len, "%dmhz: %d mV\n", 
+				exynos_info->freq_table[i].frequency/1000,
+				((exynos_info->volt_table[i] % 1000) + exynos_info->volt_table[i])/1000);
+		}
+	}
+	return len;
+}
+
+static ssize_t store_UV_uV_table(struct cpufreq_policy *policy, 
+				 const char *buf, size_t count) {
+
+	int i, tokens, top_offset, invalid_offset;
+	int t[CPUFREQ_LEVEL_END];
+
+	top_offset = 0;
+	invalid_offset = 0;
+
+	if((tokens = read_into((int*)&t, CPUFREQ_LEVEL_END, buf, count)) < 0)
+		return -EINVAL;
+
+	if(tokens != CPUFREQ_LEVEL_END) {
+		top_offset = CPUFREQ_LEVEL_END - tokens;
+	}
+
+	for (i = 0 + top_offset; i < CPUFREQ_LEVEL_END; i++) {
+		if (t[i] > CPU_UV_MV_MAX) 
+			t[i] = CPU_UV_MV_MAX;
+		else if (t[i] < CPU_UV_MV_MIN) 
+			t[i] = CPU_UV_MV_MIN;
+
+		while(exynos_info->freq_table[i+invalid_offset].frequency==CPUFREQ_ENTRY_INVALID)
+			++invalid_offset;
+
+		exynos_info->volt_table[i+invalid_offset] = t[i];
+	}
+
+	return count;
+}
+  
+static ssize_t store_UV_mV_table(struct cpufreq_policy *policy, 
+				 const char *buf, size_t count) {
+
+	int i, tokens, top_offset, invalid_offset;
+	int t[CPUFREQ_LEVEL_END];
+
+	top_offset = 0;
+	invalid_offset = 0;
+
+	if((tokens = read_into((int*)&t, CPUFREQ_LEVEL_END, buf, count)) < 0)
+		return -EINVAL;
+
+	if(tokens != CPUFREQ_LEVEL_END) {
+		top_offset = CPUFREQ_LEVEL_END - tokens;
+	}
+
+	for (i = 0 + top_offset; i < CPUFREQ_LEVEL_END; i++) {
+		int rest = 0;
+
+		t[i] *= 1000;
+
+		if((rest = t[i] % 12500) != 0){
+			if(rest > 6250)
+				t[i] += rest;
+			else
+				t[i] -= rest;
+		}
+
+		if (t[i] > CPU_UV_MV_MAX) 
+			t[i] = CPU_UV_MV_MAX;
+		else if (t[i] < CPU_UV_MV_MIN) 
+			t[i] = CPU_UV_MV_MIN;
+
+		while(exynos_info->freq_table[i+invalid_offset].frequency==CPUFREQ_ENTRY_INVALID)
+			++invalid_offset;
+
+		exynos_info->volt_table[i+invalid_offset] = t[i];
+	}
+
+	return count;
+}
+*/
+ 
 static ssize_t show_volt_table(struct kobject *kobj,
 			     struct attribute *attr, char *buf)
 {
@@ -579,56 +690,85 @@ static ssize_t show_volt_table(struct kobject *kobj,
 
 	for (i = 0; freq_table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		if (freq_table[i].frequency != CPUFREQ_ENTRY_INVALID)
-			count += snprintf(&buf[count], pr_len, "%d %d ",
+			count += snprintf(&buf[count], pr_len, "%d %d\n",
 					freq_table[i].frequency, exynos_info->volt_table[i]); /* in microvolts */
 	}
-
-	count += snprintf(&buf[count], 2, "\n");
+	
+	count += snprintf(&buf[count], pr_len, "%d %d ",
+					-42, 0); /* magic */
+//	count += snprintf(&buf[count], 2, "\n");
 	return count;
 }
 
+extern void exynos3470_restoreDefaultVolts(void);
+
 static ssize_t store_volt_table(struct kobject *kobj, struct attribute *attr,
- 			      const char *buf, size_t count)
- {
- 	int target_freq, ret;
- 	unsigned int microvolts;
- 	struct cpufreq_frequency_table *table = exynos_info->freq_table;
- 	int index;
- 	int i;
- 
- 	ret = sscanf(buf, "%d %d", &target_freq, &microvolts);
- 
-     if (ret != 2)
-         return -EINVAL;
-     
-     printk(KERN_INFO "[Voltage Control] CPU Voltage table change request : %d %d", target_freq, microvolts);
-     
-     {
- 		printk(KERN_INFO "[Voltage Control] CPU Voltage table change request evaluation failed, abort : %d %d", target_freq, microvolts);
- 		return -EINVAL;
- 	}
- 	
- 	for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
- 		unsigned int freq = table[i].frequency;
- 		if (freq == CPUFREQ_ENTRY_INVALID)
- 			continue;
- 
- 		if (target_freq == freq) {
- 			index = i;
- 			break;
- 		}
- 	}
- 
- 	if (table[i].frequency == CPUFREQ_TABLE_END)
- 		return -EINVAL;
- 		
- 	/* "index" is the index of the voltage table entry we want */
- 	printk(KERN_INFO "[Voltage Control] CPU Voltage table change request evaluation success, setting values : %d %d", target_freq, microvolts);
- 	
- 	exynos_info->volt_table[index] = microvolts;	
- 	
- 	return count;
- }
+			      const char *buf, size_t count)
+{
+	int target_freq, ret;
+	int microvolts;
+	struct cpufreq_frequency_table *table = exynos_info->freq_table;
+	int index;
+	int i, rest;
+
+	ret = sscanf(buf, "%d %d", &target_freq, &microvolts);
+
+    if (ret != 2)
+        return -EINVAL;
+    
+    printk(KERN_INFO "[Voltage Control] CPU Voltage table change request : %d %d", target_freq, microvolts);
+    
+    if ((rest = (microvolts  % VOLT_DIV)) != 0)
+			microvolts  += VOLT_DIV - rest;
+    
+    if (target_freq == -42) // its magic!
+		goto appendAllVolts;
+		
+	if (target_freq == -43) // more magic!
+		goto restoreDefaultVolts;
+	
+	for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
+		unsigned int freq = table[i].frequency;
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
+
+		if (target_freq == freq) {
+			index = i;
+			break;
+		}
+	}
+
+	if (table[i].frequency == CPUFREQ_TABLE_END)
+		return -EINVAL;
+		
+	sanitize_min_max(microvolts, MIN_VOLT, MAX_VOLT_);
+			
+	/* "index" is the index of the voltage table entry we want */
+	printk(KERN_INFO "[Voltage Control] CPU Voltage table change request evaluation success, setting values : %d %d", target_freq, microvolts);
+	
+	exynos_info->volt_table[index] = microvolts;	
+	
+	return count;
+	
+appendAllVolts:;
+
+	for (i = 0; (table[i].frequency != CPUFREQ_TABLE_END); i++) {
+		unsigned int freq = table[i].frequency;
+		unsigned int volt = 0; 
+		if (freq == CPUFREQ_ENTRY_INVALID)
+			continue;
+		volt = exynos_info->volt_table[i] + microvolts;
+		sanitize_min_max(volt, MIN_VOLT, MAX_VOLT_)
+		exynos_info->volt_table[i] = volt;
+	}
+	printk(KERN_INFO "[Voltage Control] CPU Voltage table change request evaluation success, setting ALL values : %d %d", target_freq, microvolts);
+	return count;
+	
+restoreDefaultVolts:;
+	printk(KERN_INFO "[Voltage Control] CPU Voltage table change request evaluation success, setting DEFAULT values : %d %d", target_freq, microvolts);
+	exynos3470_restoreDefaultVolts();
+	return count;	
+}
 
 static ssize_t show_min_freq(struct kobject *kobj,
 			     struct attribute *attr, char *buf)
@@ -692,6 +832,8 @@ static ssize_t store_max_freq(struct kobject *kobj, struct attribute *attr,
 
 define_one_global_ro(freq_table);
 define_one_global_rw(volt_table);
+//define_one_global_ro(UV_mV_table);
+//define_one_global_ro(UV_uV_table);
 define_one_global_rw(min_freq);
 define_one_global_rw(max_freq);
 
@@ -704,11 +846,18 @@ static struct global_attr cpufreq_max_limit =
 static struct global_attr voltage_table =
 		__ATTR(voltage_table, S_IRUGO | S_IWUSR, show_volt_table, store_volt_table);
 
+//static struct global_attr mV_table =
+//                __ATTR(UV_mV_table, S_IRUGO | S_IWUSR, show_UV_mV_table, store_UV_mV_table);
+//static struct global_attr UV_uV_table =
+//                __ATTR(UV_uV_table, S_IRUGO | S_IWUSR, show_UV_uV_table, store_UV_uV_table);
+
 static struct attribute *cpufreq_attributes[] = {
 	&freq_table.attr,
 	&min_freq.attr,
 	&max_freq.attr,
 	&volt_table.attr,
+//	&UV_mV_table.attr,
+//	&UV_uV_table.attr,	
 	NULL
 };
 

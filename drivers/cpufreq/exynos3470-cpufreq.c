@@ -21,8 +21,12 @@
 #include <mach/regs-clock.h>
 #include <mach/cpufreq.h>
 #include <mach/sec_debug.h>
+#include <linux/sysfs.h>
+#include <linux/sysfs_helpers.h>
 
 #define	CPUFREQ_LEVEL_END	(L14 + 1)
+#define CPU_UV_MV_MAX 1600000
+#define CPU_UV_MV_MIN 600000
 
 int arm_lock;
 static int max_support_idx;
@@ -35,6 +39,7 @@ static struct clk *mout_apll;
 static struct clk *fout_apll;
 
 static unsigned int exynos3470_volt_table[CPUFREQ_LEVEL_END];
+static unsigned int exynos3470_default_volt_table[CPUFREQ_LEVEL_END];
 static unsigned int exynos3470_cpu_asv_abb[CPUFREQ_LEVEL_END];
 
 static struct cpufreq_frequency_table *exynos3470_freq_table;
@@ -559,6 +564,8 @@ static int __init set_volt_table(void)
 		pr_info("CPUFREQ L%d : %d uV ABB : %d\n", i,
 					exynos3470_volt_table[i],
 					exynos3470_cpu_asv_abb[i]);
+		exynos3470_default_volt_table[i] = exynos3470_volt_table[i];
+					
 	}
 
 	if (samsung_rev() >= EXYNOS3470_REV_2_0) {
@@ -576,6 +583,15 @@ static int __init set_volt_table(void)
 
 	return 0;
 }
+
+void exynos3470_restoreDefaultVolts(void)
+{
+	unsigned int i;
+	for (i = 0; i < CPUFREQ_LEVEL_END; i++) {
+		exynos3470_volt_table[i] = exynos3470_default_volt_table[i];
+	}
+}
+EXPORT_SYMBOL(exynos3470_restoreDefaultVolts);
 
 int __init exynos3470_cpufreq_init(struct exynos_dvfs_info *info)
 {
@@ -691,3 +707,109 @@ err_moutcore:
 	return -EINVAL;
 }
 EXPORT_SYMBOL(exynos3470_cpufreq_init);
+
+
+ssize_t show_UV_uV_table(struct cpufreq_policy *policy, char *buf) {
+	int i, len = 0;
+	if (buf)
+	{
+		for (i = max_support_idx; i<=min_support_idx; i++)
+		{
+			if(exynos3470_freq_table[i].frequency==CPUFREQ_ENTRY_INVALID) continue;
+			len += sprintf(buf + len, "%d %d \n",
+				exynos3470_freq_table[i].frequency/1000,
+				exynos3470_volt_table[i]);
+		}
+	}
+	return len;
+}
+
+ssize_t show_UV_mV_table(struct cpufreq_policy *policy, char *buf) {
+	int i, len = 0;
+	if (buf)
+	{
+		for (i = max_support_idx; i<=min_support_idx; i++)
+		{
+			if(exynos3470_freq_table[i].frequency==CPUFREQ_ENTRY_INVALID) continue;
+			len += sprintf(buf + len, "%dmhz: %d mV\n", 
+				exynos3470_freq_table[i].frequency/1000,
+				((exynos3470_volt_table[i] % 1000) + exynos3470_volt_table[i])/1000);
+		}
+	}
+	return len;
+}
+
+ssize_t store_UV_uV_table(struct cpufreq_policy *policy,  
+				 const char *buf, size_t count) {
+
+	int i, tokens, top_offset, invalid_offset;
+	int t[CPUFREQ_LEVEL_END];
+
+	top_offset = 0;
+	invalid_offset = 0;
+
+	if((tokens = read_into((int*)&t, CPUFREQ_LEVEL_END, buf, count)) < 0)
+		return -EINVAL;
+
+	if(tokens != CPUFREQ_LEVEL_END) {
+		top_offset = CPUFREQ_LEVEL_END - tokens;
+	}
+
+	for (i = 0 + top_offset; i < CPUFREQ_LEVEL_END; i++) {
+		if (t[i] > CPU_UV_MV_MAX) 
+			t[i] = CPU_UV_MV_MAX;
+		else if (t[i] < CPU_UV_MV_MIN) 
+			t[i] = CPU_UV_MV_MIN;
+
+		while(exynos3470_freq_table[i+invalid_offset].frequency==CPUFREQ_ENTRY_INVALID)
+			++invalid_offset;
+
+		exynos3470_volt_table[i+invalid_offset] = t[i];
+	}
+
+	return count;
+}
+
+ssize_t store_UV_mV_table(struct cpufreq_policy *policy,  
+				 const char *buf, size_t count) {
+
+	int i, tokens, top_offset, invalid_offset;
+	int t[CPUFREQ_LEVEL_END];
+
+	top_offset = 0;
+	invalid_offset = 0;
+
+	if((tokens = read_into((int*)&t, CPUFREQ_LEVEL_END, buf, count)) < 0)
+		return -EINVAL;
+
+	if(tokens != CPUFREQ_LEVEL_END) {
+		top_offset = CPUFREQ_LEVEL_END - tokens;
+	}
+
+	for (i = 0 + top_offset; i < CPUFREQ_LEVEL_END; i++) {
+		int rest = 0;
+
+     t[i] *= 1000;
+
+		if((rest = t[i] % 12500) != 0){
+    	if(rest > 6250)
+ 		t[i] += rest;
+    	else
+    		t[i] -= rest;
+   }
+
+     if (t[i] > CPU_UV_MV_MAX) 
+     	t[i] = CPU_UV_MV_MAX;
+     else if (t[i] < CPU_UV_MV_MIN) 
+     	t[i] = CPU_UV_MV_MIN;
+
+     while(exynos3470_freq_table[i+invalid_offset].frequency==CPUFREQ_ENTRY_INVALID)
+    	++invalid_offset;
+
+exynos3470_volt_table[i+invalid_offset] = t[i];
+	}
+
+	return count;
+}
+
+
