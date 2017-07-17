@@ -25,7 +25,7 @@
 #include <linux/sysfs_helpers.h>
 
 #define	CPUFREQ_LEVEL_END	(L14 + 1)
-#define CPU_UV_MV_MAX 1600000
+#define CPU_UV_MV_MAX 1500000
 #define CPU_UV_MV_MIN 600000
 
 int arm_lock;
