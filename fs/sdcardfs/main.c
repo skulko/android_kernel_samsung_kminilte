@@ -34,8 +34,6 @@ enum {
 	Opt_reserved_mb,
 	Opt_gid_derivation,
 	Opt_default_normal,
-	Opt_gid_derivation,
-	Opt_default_normal,
 	Opt_unshared_obb,
 	Opt_err,
 };
@@ -48,9 +46,9 @@ static const match_table_t sdcardfs_tokens = {
 	{Opt_mask, "mask=%u"},
 	{Opt_userid, "userid=%d"},
 	{Opt_multiuser, "multiuser"},
-	{Opt_gid_derivation, "derive_gid"},
 	{Opt_default_normal, "default_normal"},
 	{Opt_unshared_obb, "unshared_obb"},
+	{Opt_gid_derivation, "derive_gid"},
 	{Opt_reserved_mb, "reserved_mb=%u"},
 	{Opt_err, NULL}
 };
@@ -72,6 +70,8 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 	vfsopts->gid = 0;
 	/* by default, 0MB is reserved */
 	opts->reserved_mb = 0;
+	/* by default, gid derivation is off */
+	opts->gid_derivation = false;
 
 	*debug = 0;
 
