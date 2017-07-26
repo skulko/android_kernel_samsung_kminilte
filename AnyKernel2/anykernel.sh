@@ -42,7 +42,7 @@ chmod -R 755 $ramdisk
 dump_boot;
 
 # begin ramdisk changes
-append_file init.universal3470.rc "/sbin/uci" init.universal3470;
+#append_file init.universal3470.rc "/sbin/uci" init.universal3470;
 #append_file init.universal3470.rc "kminilte-post_boot" init.universal3470;
 
 # end ramdisk changes

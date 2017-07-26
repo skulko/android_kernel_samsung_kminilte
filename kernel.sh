@@ -36,10 +36,7 @@ export CROSS_COMPILE=/opt/toolchains/crosstool/arm-cortex_a7-UBERTC_8/bin/arm-ea
 
 # Show ASCII TEXT
 echo -e ${RED}; newLine
-
-echo -e ${RED}; newLine
 echo -e "================================================"; newLine; newLine
-
 echo " __                       _          _  _          ";
 echo "/ _\ _ __    ___    ___  | | __ ___ (_)| |_  _   _ ";
 echo "\ \ | '_ \  / _ \  / _ \ | |/ // __|| || __|| | | |";
@@ -69,12 +66,8 @@ make g800f_custom_defconfig
 echoText "STARTING BUILD"
 make -j4
 
-# End the script
-newLine; echoText "${BUILD_RESULT_STRING}!"
 
 DATE_END=$(date +"%s")
 DIFF=$((${DATE_END} - ${DATE_START}))
-
+echo -e ${RED}; newLine
 echo -e ${RED}"SCRIPT DURATION: $((${DIFF} / 60)) MINUTES AND $((${DIFF} % 60)) SECONDS"
-if [[ "${BUILD_RESULT_STRING}" == "BUILD SUCCESSFUL" ]]; then
-fi
