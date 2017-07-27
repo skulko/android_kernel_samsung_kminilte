@@ -91,6 +91,7 @@ obj-$(CONFIG_EXYNOS4_MCT)	+= mct.o
 obj-$(CONFIG_HOTPLUG_CPU)	+= hotplug.o
 
 obj-$(CONFIG_ALUCARD_HOTPLUG) += alucard_hotplug.o
+obj-$(CONFIG_THUNDERPLUG_CONTROL)	+= thunderplug.o
 
 ifeq ($(CONFIG_SOC_EXYNOS5260),y)
 obj-y				+= clock-audss-exynos5260.o
