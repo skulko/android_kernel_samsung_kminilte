@@ -637,19 +637,21 @@ int __init intelli_plug_init(void)
 	queue_delayed_work_on(0, intelliplug_wq, &intelli_plug_work,
 		msecs_to_jiffies(10));
 
-//	intelli_plug_perf_boost_kobj
-	//	= kobject_create_and_add("intelli_plug", kernel_kobj);
-//
-	//if (!intelli_plug_perf_boost_kobj) {
-	//	return -ENOMEM;
-	//}
-//
-//	rc = sysfs_create_group(intelli_plug_perf_boost_kobj,
-//				&intelli_plug_perf_boost_attr_group);
-//
-//	if (rc)
-//		kobject_put(intelli_plug_perf_boost_kobj);
-//
+#if defined (CONFIG_POWERSUSPEND) || defined(CONFIG_HAS_EARLYSUSPEND)
+	intelli_plug_perf_boost_kobj
+		= kobject_create_and_add("intelli_plug", kernel_kobj);
+
+	if (!intelli_plug_perf_boost_kobj) {
+		return -ENOMEM;
+	}
+
+	rc = sysfs_create_group(intelli_plug_perf_boost_kobj,
+				&intelli_plug_perf_boost_attr_group);
+
+	if (rc)
+		kobject_put(intelli_plug_perf_boost_kobj);
+#endif
+
 	return 0;
 }
 
