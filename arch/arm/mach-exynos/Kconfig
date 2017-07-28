@@ -518,6 +518,12 @@ config THUNDERPLUG_CONTROL
        This driver uses powersuspend to take down the cpu cores
        on a octa core device. Tuned to work on a quad core device.	
        
+config INTELLI_PLUG
+        bool "Enable intelli-plug cpu hotplug driver"
+        default n
+        help
+          Generic Intelli-plug cpu hotplug driver for ARM SOCs       
+       
 config EXYNOS5_DEV_BTS
 	bool
 	depends on ARCH_EXYNOS5
