@@ -23,6 +23,7 @@
 #include <linux/cpu.h>
 #include <linux/lcd_notify.h>
 #include <linux/cpufreq.h>
+#include "thunderplug.h"
 
 static int cpu_num = 3; //cpu_num = <total no. of cpus> - 1
 
