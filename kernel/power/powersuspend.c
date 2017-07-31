@@ -36,7 +36,7 @@ static void power_resume(struct work_struct *work);
 static int ps_state;
 /* Robcore: Provide an option to sync the system on powersuspend */
 static unsigned int sync_on_powersuspend;
-extern int poweroff_charging;
+//extern int poweroff_charging;
 #define GLOBAL_PM 1
 static unsigned int use_global_suspend = GLOBAL_PM;
 
@@ -70,12 +70,12 @@ static void power_suspend(struct work_struct *work)
 
 	cancel_work_sync(&power_resume_work);
 
-	if ((poweroff_charging) || (system_state == SYSTEM_RESTART)
-		|| (system_state == SYSTEM_POWER_OFF)) {
-		pr_info("[POWERSUSPEND] Ignoring Unsupported System \
-				State\n");
-		return;
-	}
+	//if ((poweroff_charging) || (system_state == SYSTEM_RESTART)
+	//	|| (system_state == SYSTEM_POWER_OFF)) {
+	//	pr_info("[POWERSUSPEND] Ignoring Unsupported System 
+	//			State\n");
+	//	return;
+	//}
 
 	pr_info("[POWERSUSPEND] Entering Suspend...\n");
 	mutex_lock(&power_suspend_lock);
