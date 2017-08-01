@@ -522,7 +522,14 @@ config INTELLI_PLUG
         bool "Enable intelli-plug cpu hotplug driver"
         default n
         help
-          Generic Intelli-plug cpu hotplug driver for ARM SOCs       
+          Generic Intelli-plug cpu hotplug driver for ARM SOCs      
+          
+config LAZYPLUG
+	bool "Conservative hotplugging for generic devices"
+	default n
+	help
+	  This enables the conservative hotplugging, lazyplug by arter97
+	  based on intelli_plug. Refer to the comments for more info.           
        
 config EXYNOS5_DEV_BTS
 	bool
