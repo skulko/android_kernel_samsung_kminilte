@@ -12,6 +12,8 @@ obj-				:=
 
 # Core
 
+obj-y		:= msm_sleeper.o
+
 obj-$(CONFIG_ARCH_EXYNOS)	+= common.o
 ifneq ($(CONFIG_SOC_EXYNOS4270),y)
 obj-$(CONFIG_ARCH_EXYNOS4)	+= asv.o asv-4x12.o
@@ -93,6 +95,7 @@ obj-$(CONFIG_HOTPLUG_CPU)	+= hotplug.o
 obj-$(CONFIG_ALUCARD_HOTPLUG) += alucard_hotplug.o
 obj-$(CONFIG_THUNDERPLUG_CONTROL)	+= thunderplug.o
 obj-$(CONFIG_INTELLI_PLUG) += intelli_plug.o
+obj-$(CONFIG_MSM_SLEEPER)		+= msm_sleeper.o
 obj-$(CONFIG_LAZYPLUG)			+= lazyplug.o
 CFLAGS_lazyplug.o			+= -finline-functions
 
