@@ -504,33 +504,40 @@ config EXYNOS_TMU
 	depends on CPU_FREQ
 	help
 	  Common setup code for TMU
-	  
+
 config ALUCARD_HOTPLUG
 	bool "Enable alucard-hotplug cpu hotplug driver"
 	default n
 	help
-	  Generic Alucard-hotplug cpu hotplug driver for ARM SOCs	  
-	  
+	  Generic Alucard-hotplug cpu hotplug driver for ARM SOCs
+
 config THUNDERPLUG_CONTROL
       bool "Enable plugging down/up of cores using powersuspend"
       default n
       help
        This driver uses powersuspend to take down the cpu cores
-       on a octa core device. Tuned to work on a quad core device.	
-       
+       on a octa core device. Tuned to work on a quad core device.
+
 config INTELLI_PLUG
         bool "Enable intelli-plug cpu hotplug driver"
         default n
         help
-          Generic Intelli-plug cpu hotplug driver for ARM SOCs      
-          
+          Generic Intelli-plug cpu hotplug driver for ARM SOCs
+
 config LAZYPLUG
 	bool "Conservative hotplugging for generic devices"
 	default n
 	help
 	  This enables the conservative hotplugging, lazyplug by arter97
-	  based on intelli_plug. Refer to the comments for more info.           
-       
+	  based on intelli_plug. Refer to the comments for more info.
+
+config AUTOSMP
+	bool "Multi-core automatic hotplug support"
+	depends on SMP && HOTPLUG_CPU
+	help
+	  Automatically hotplugs the multiple cpu cores on and off
+	  based on cpu load and suspend state
+
 config EXYNOS5_DEV_BTS
 	bool
 	depends on ARCH_EXYNOS5
@@ -1936,7 +1943,7 @@ config TIMA_RKP_L2_GROUP
 config TIMA_RKP_LAZY_MMU
 	bool
 	depends on TIMA_RKP_L2_TABLES
-	default	y 
+	default	y
 	help
 	  TIMA lazy MMU for L2 pages
 
@@ -1946,7 +1953,7 @@ config TIMA_IOMMU_OPT
 	default	y
 	help
 	  TIMA IOMMU optimization for L2 pages
-	
+
 config TIMA_KMAP_OPT
 	bool
 	depends on TIMA_RKP_L2_TABLES
@@ -1957,7 +1964,7 @@ config TIMA_KMAP_OPT
 config TIMA_DALVIKHEAP_OPT
 	bool
 	depends on TIMA_RKP_L2_TABLES
-	default	y 
+	default	y
 	help
 	  TIMA DALVIK HEAP optimization for L2 pages
 

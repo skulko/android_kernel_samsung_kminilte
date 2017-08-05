@@ -96,6 +96,7 @@ obj-$(CONFIG_ALUCARD_HOTPLUG) += alucard_hotplug.o
 obj-$(CONFIG_THUNDERPLUG_CONTROL)	+= thunderplug.o
 obj-$(CONFIG_INTELLI_PLUG) += intelli_plug.o
 obj-$(CONFIG_MSM_SLEEPER)		+= msm_sleeper.o
+obj-$(CONFIG_AUTOSMP) += autosmp.o
 obj-$(CONFIG_LAZYPLUG)			+= lazyplug.o
 CFLAGS_lazyplug.o			+= -finline-functions
 
