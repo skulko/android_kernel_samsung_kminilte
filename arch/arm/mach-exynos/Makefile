@@ -92,13 +92,14 @@ obj-$(CONFIG_EXYNOS4_MCT)	+= mct.o
 
 obj-$(CONFIG_HOTPLUG_CPU)	+= hotplug.o
 
-obj-$(CONFIG_ALUCARD_HOTPLUG) += alucard_hotplug.o
-obj-$(CONFIG_THUNDERPLUG_CONTROL)	+= thunderplug.o
-obj-$(CONFIG_INTELLI_PLUG) += intelli_plug.o
-obj-$(CONFIG_MSM_SLEEPER)		+= msm_sleeper.o
 obj-$(CONFIG_AUTOSMP) += autosmp.o
+obj-$(CONFIG_ALUCARD_HOTPLUG) += alucard_hotplug.o
+obj-$(CONFIG_INTELLI_PLUG) += intelli_plug.o
 obj-$(CONFIG_LAZYPLUG)			+= lazyplug.o
 CFLAGS_lazyplug.o			+= -finline-functions
+obj-$(CONFIG_MSM_SLEEPER)		+= msm_sleeper.o
+obj-$(CONFIG_THUNDERPLUG_CONTROL)	+= thunderplug.o
+
 
 ifeq ($(CONFIG_SOC_EXYNOS5260),y)
 obj-y				+= clock-audss-exynos5260.o
