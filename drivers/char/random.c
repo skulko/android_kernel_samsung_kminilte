@@ -1073,7 +1073,7 @@ void get_random_bytes_arch(void *buf, int nbytes)
 
 		if (!arch_get_random_long(&v))
 			break;
-		
+
 		memcpy(p, &v, chunk);
 		p += chunk;
 		nbytes -= chunk;
@@ -1501,28 +1501,6 @@ unsigned long get_random_long(void)
 	put_cpu_var(get_random_int_hash);
 
 	return ret;
-}
-EXPORT_SYMBOL(get_random_long);
-
-/*
- * Same as get_random_int(), but returns unsigned long.
- */
-unsigned long get_random_long(void)
-{
-   __u32 *hash;
-   unsigned long ret;
-
-   if (arch_get_random_long(&ret))
-       return ret;
-
-   hash = get_cpu_var(get_random_int_hash);
-
-   hash[0] += current->pid + jiffies + get_cycles();
-   md5_transform(hash, random_int_secret);
-   ret = *(unsigned long *)hash;
-   put_cpu_var(get_random_int_hash);
-
-   return ret;
 }
 EXPORT_SYMBOL(get_random_long);
 
