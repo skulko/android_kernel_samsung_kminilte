@@ -1,6 +1,7 @@
 /*
  * drivers/cpufreq/cpufreq_ondemandplus.c
  * Copyright (C) 2013 Boy Petersen
+ * Copyright (C) 2014 Kyriacos Elpidorou [for the Note 4 Adaptation]
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -55,8 +56,10 @@
 #include <asm/cputime.h>
 #include <linux/module.h>
 
+#if 0
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpufreq_ondemandplus.h>
+#endif
 
 static atomic_t active_count = ATOMIC_INIT(0);
 
@@ -95,25 +98,25 @@ static unsigned long up_threshold;
 #define DEFAULT_DOWN_DIFFERENTIAL 20
 static unsigned long down_differential;
 
-#define DEFAULT_MIN_FREQ 300000
+#define DEFAULT_MIN_FREQ 384000
 static u64 allowed_min;
 
-#define DEFAULT_MAX_FREQ 2265600
+#define DEFAULT_MAX_FREQ 1590000
 static u64 allowed_max;
 
-#define DEFAULT_INTER_HIFREQ 1728000
+#define DEFAULT_INTER_HIFREQ 1374000
 static u64 inter_hifreq;
 
-#define DEFAULT_INTER_LOFREQ 300000
+#define DEFAULT_INTER_LOFREQ 1134000
 static u64 inter_lofreq;
 
-#define SUSPEND_FREQ 300000
+#define SUSPEND_FREQ 384000
 static u64 suspend_frequency;
 
 #define DEFAULT_INTER_STAYCYCLES 2
 static unsigned long inter_staycycles;
 
-#define DEFAULT_STAYCYCLES_RESETFREQ 652800
+#define DEFAULT_STAYCYCLES_RESETFREQ 918000
 static u64 staycycles_resetfreq;
 
 #define DEFAULT_IO_IS_BUSY 0
@@ -135,8 +138,6 @@ struct cpufreq_governor cpufreq_gov_ondemandplus = {
         .max_transition_latency = 10000000,
         .owner = THIS_MODULE,
 };
-
-
 
 static void cpufreq_ondemandplus_timer(unsigned long data)
 {
@@ -172,7 +173,7 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
 
         time_in_idle = pcpu->time_in_idle;
         idle_exit_time = pcpu->idle_exit_time;
-       // now_idle = get_cpu_idle_time(data, &pcpu->timer_run_time, 0);
+        now_idle = get_cpu_idle_time(data, &pcpu->timer_run_time, 0);
         smp_wmb();
 
         /* If we raced with cancelling a timer, skip. */
@@ -204,13 +205,13 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
 
         /*
          * If short-term load (since last idle timer started or
-         * timer function re-armed itself) is higher than long-term 
+         * timer function re-armed itself) is higher than long-term
          * load (since last frequency change), use short-term load
          * to be able to scale up quickly.
-         * When long-term load is higher than short-term load, 
+         * When long-term load is higher than short-term load,
          * use the average of short-term load and long-term load
          * (instead of just long-term load) to be able to scale
-         * down faster, with the long-term load being able to delay 
+         * down faster, with the long-term load being able to delay
          * down scaling a little to maintain responsiveness.
          */
         if (load_since_change > cpu_load) {
@@ -226,21 +227,21 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
                 if (stay_counter) {
                         stay_counter = 0;
                 }
-                
+
                 /* Check for frequency increase */
                 if (load_freq > up_threshold * pcpu->target_freq) {
                         /* if we are already at full speed then break out early */
                         if (pcpu->target_freq < suspend_frequency) {
-                                
+
                                 new_freq = pcpu->target_freq + pcpu->policy->max / 10;
 
                                 if (new_freq > suspend_frequency) {
                                         new_freq = suspend_frequency;
                                 }
-                                
+
                                 cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table, new_freq,
                                                 CPUFREQ_RELATION_L, &index);
-                                
+
                                 new_freq = pcpu->freq_table[index].frequency;
                         }
 
@@ -261,10 +262,10 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
                                 if (new_freq < pcpu->policy->min) {
                                         new_freq = pcpu->policy->min;
                                 }
-                        
+
                                 cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table, new_freq,
                                                 CPUFREQ_RELATION_H, &index);
-                                
+
                                 new_freq = pcpu->freq_table[index].frequency;
                         }
                 }
@@ -299,7 +300,7 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
                 */
                 if (load_freq < (up_threshold - down_differential) *
                                 pcpu->target_freq) {
-                        
+
                         if (pcpu->target_freq != allowed_min) {
                                 new_freq = load_freq /
                                                 (up_threshold - down_differential);
@@ -312,8 +313,8 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
                                         new_freq = allowed_min;
                                 }
                         }
-                } else if (pcpu->target_freq == pcpu->policy->max && 
-                                load_freq < (up_threshold - down_differential / 2) * 
+                } else if (pcpu->target_freq == pcpu->policy->max &&
+                                load_freq < (up_threshold - down_differential / 2) *
                                 pcpu->target_freq) {
                         new_freq = load_freq / (up_threshold - down_differential * 2 / 3);
                 }
@@ -328,16 +329,16 @@ static void cpufreq_ondemandplus_timer(unsigned long data)
                 goto rearm;
         }
 
-        new_freq = pcpu->freq_table[index].frequency;        
+        new_freq = pcpu->freq_table[index].frequency;
 
         if (pcpu->target_freq == new_freq) {
-                trace_cpufreq_ondemandplus_already(data, cpu_load,
-                                                  pcpu->target_freq, new_freq);
+                //trace_cpufreq_ondemandplus_already(data, cpu_load,
+                                                  //pcpu->target_freq, new_freq);
                 goto rearm_if_notmax;
         }
 
-        trace_cpufreq_ondemandplus_target(data, cpu_load, pcpu->target_freq,
-                                         new_freq);
+       // trace_cpufreq_ondemandplus_target(data, cpu_load, pcpu->target_freq,
+                                         //new_freq);
         pcpu->target_set_time_in_idle = now_idle;
         pcpu->target_set_time = pcpu->timer_run_time;
 
@@ -362,14 +363,14 @@ rearm:
                  * Else cancel the timer if that CPU goes idle.  We don't
                  * need to re-evaluate speed until the next idle exit.
                  */
-                 
+
                 unsigned int cur_min_policy;
                 if (allowed_max == suspend_frequency) {
                         cur_min_policy = pcpu->policy->min;
                 } else {
                         cur_min_policy = allowed_min;
                 }
-                
+
                 if (pcpu->target_freq == cur_min_policy) {
                         smp_rmb();
 
@@ -379,8 +380,8 @@ rearm:
                         pcpu->timer_idlecancel = 1;
                 }
 
-          //      pcpu->time_in_idle = get_cpu_idle_time(
-          //              data, &pcpu->idle_exit_time, 0);
+                pcpu->time_in_idle = get_cpu_idle_time(
+                        data, &pcpu->idle_exit_time, 0);
                 mod_timer(&pcpu->cpu_timer,
                         jiffies + usecs_to_jiffies(timer_rate));
         }
@@ -413,8 +414,8 @@ static void cpufreq_ondemandplus_idle_start(void)
                  * the CPUFreq driver.
                  */
                 if (!pending) {
-      //                  pcpu->time_in_idle = get_cpu_idle_time(
-           //                     smp_processor_id(), &pcpu->idle_exit_time, 0);
+                        pcpu->time_in_idle = get_cpu_idle_time(
+                                smp_processor_id(), &pcpu->idle_exit_time, 0);
                         pcpu->timer_idlecancel = 0;
                         mod_timer(&pcpu->cpu_timer,
                                   jiffies + usecs_to_jiffies(timer_rate));
@@ -463,9 +464,9 @@ static void cpufreq_ondemandplus_idle_end(void)
         if (timer_pending(&pcpu->cpu_timer) == 0 &&
             pcpu->timer_run_time >= pcpu->idle_exit_time &&
             pcpu->governor_enabled) {
-           //     pcpu->time_in_idle =
-          //              get_cpu_idle_time(smp_processor_id(),
-             //                                &pcpu->idle_exit_time, 0);
+                pcpu->time_in_idle =
+                        get_cpu_idle_time(smp_processor_id(),
+                                             &pcpu->idle_exit_time, 0);
                 pcpu->timer_idlecancel = 0;
                 mod_timer(&pcpu->cpu_timer,
                           jiffies + usecs_to_jiffies(timer_rate));
@@ -522,9 +523,9 @@ static int cpufreq_ondemandplus_speedchange_task(void *data)
                                 __cpufreq_driver_target(pcpu->policy,
                                                         max_freq,
                                                         CPUFREQ_RELATION_H);
-                        trace_cpufreq_ondemandplus_setspeed(cpu,
-                                                pcpu->target_freq,
-                                                pcpu->policy->cur);
+                        //trace_cpufreq_ondemandplus_setspeed(cpu,
+                                             //   pcpu->target_freq,
+                                               // pcpu->policy->cur);
                 }
         }
 
@@ -553,7 +554,7 @@ static ssize_t store_timer_rate(struct kobject *kobj,
 
 static struct global_attr timer_rate_attr = __ATTR(timer_rate, 0644,
                 show_timer_rate, store_timer_rate);
-        
+
 static ssize_t show_up_threshold(struct kobject *kobj,
                         struct attribute *attr, char *buf)
 {
@@ -569,20 +570,20 @@ static ssize_t store_up_threshold(struct kobject *kobj,
         ret = strict_strtoul(buf, 0, &val);
         if (ret < 0)
                 return ret;
-                
+
         if (val > 100)
                 val = 100;
 
         if (val < 1)
                 val = 1;
-                
+
         up_threshold = val;
         return count;
 }
 
 static struct global_attr up_threshold_attr = __ATTR(up_threshold, 0644,
                 show_up_threshold, store_up_threshold);
-                
+
 static ssize_t show_down_differential(struct kobject *kobj,
                         struct attribute *attr, char *buf)
 {
@@ -608,7 +609,7 @@ static ssize_t store_down_differential(struct kobject *kobj,
 
 static struct global_attr down_differential_attr = __ATTR(down_differential, 0644,
                 show_down_differential, store_down_differential);
-                
+
 static ssize_t show_inter_hifreq(struct kobject *kobj,
                                  struct attribute *attr, char *buf)
 {
@@ -628,7 +629,7 @@ static ssize_t store_inter_hifreq(struct kobject *kobj,
         ret = strict_strtoull(buf, 0, &val);
         if (ret < 0)
                 return ret;
-        
+
         index = 0;
         cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table, val,
                 CPUFREQ_RELATION_L, &index);
@@ -646,7 +647,7 @@ static ssize_t store_inter_hifreq(struct kobject *kobj,
 
 static struct global_attr inter_hifreq_attr = __ATTR(inter_hifreq, 0644,
                 show_inter_hifreq, store_inter_hifreq);
-                
+
 static ssize_t show_inter_lofreq(struct kobject *kobj,
                                  struct attribute *attr, char *buf)
 {
@@ -677,7 +678,7 @@ static ssize_t store_inter_lofreq(struct kobject *kobj,
 
         if (val < allowed_min)
                 val = allowed_min;
-        
+
         inter_lofreq = val;
         return count;
 }
@@ -700,17 +701,17 @@ static ssize_t store_inter_staycycles(struct kobject *kobj,
         ret = strict_strtoul(buf, 0, &val);
         if (ret < 0)
                 return ret;
-                
+
         if (val > 10)
                 val = 10;
-                
+
         inter_staycycles = val;
         return count;
 }
 
 static struct global_attr inter_staycycles_attr = __ATTR(inter_staycycles, 0644,
                 show_inter_staycycles, store_inter_staycycles);
-                
+
 static ssize_t show_staycycles_resetfreq(struct kobject *kobj,
                                  struct attribute *attr, char *buf)
 {
@@ -729,7 +730,7 @@ static ssize_t store_staycycles_resetfreq(struct kobject *kobj,
         ret = strict_strtoull(buf, 0, &val);
         if (ret < 0)
                 return ret;
-                
+
         if (val > pcpu->policy->max)
                 val = pcpu->policy->max;
 
@@ -824,8 +825,8 @@ static int cpufreq_governor_ondemandplus(struct cpufreq_policy *policy,
                         pcpu->target_freq = policy->cur;
                         pcpu->freq_table = freq_table;
                         pcpu->target_set_time_in_idle =
-                        get_cpu_idle_time(j,
-                        &pcpu->target_set_time, 0);
+                                get_cpu_idle_time(j,
+                                             &pcpu->target_set_time, 0);
                         pcpu->governor_enabled = 1;
                         smp_wmb();
                 }
@@ -886,7 +887,7 @@ static int __init cpufreq_ondemandplus_init(void)
 {
         unsigned int i;
         struct cpufreq_ondemandplus_cpuinfo *pcpu;
-        struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
+        struct sched_param param = { .sched_priority = 0 };
 
         timer_rate = DEFAULT_TIMER_RATE;
         up_threshold = DEFAULT_UP_THRESHOLD;
