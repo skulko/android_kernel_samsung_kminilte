@@ -72,6 +72,7 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 	opts->reserved_mb = 0;
 	/* by default, gid derivation is off */
 	opts->gid_derivation = false;
+	vfsopts->default_normal = false;
 
 	*debug = 0;
 
@@ -126,12 +127,11 @@ static int parse_options(struct super_block *sb, char *options, int silent,
 		case Opt_gid_derivation:
 			opts->gid_derivation = true;
 			break;
-		case Opt_default_normal:
-			opts->default_normal = true;
-			break;
 		case Opt_unshared_obb:
 			opts->unshared_obb = true;
 			break;
+		case Opt_default_normal:
+			vfsopts->default_normal = true;
 		/* unknown option */
 		default:
 			if (!silent)
@@ -187,7 +187,6 @@ int parse_options_remount(struct super_block *sb, char *options, int silent,
 			break;
 		case Opt_default_normal:
 		case Opt_unshared_obb:
-		case Opt_default_normal:
 		case Opt_multiuser:
 		case Opt_userid:
 		case Opt_fsuid:
