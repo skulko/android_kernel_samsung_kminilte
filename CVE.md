@@ -35,7 +35,7 @@
 | CVE-2017-15127   | not affected                             |
 | CVE-2017-15129   | not affected                             |
 | CVE-2017-15868   | 71bb99a02b32b4cc4265118e85f6035ca72923f0 |
-| CVE-2017-16939   | open                                     |
+| CVE-2017-16939(X)| I99ff2145d88095b5e7f555d56f41e0f06412b288|
 | CVE-2017-16994   | 373c4557d2aa362702c4c2d41288fb1e54990b7c |
 | CVE-2017-17052   | 2b7e8665b4ff51c034c55df3cff76518d1a9ee3a |
 | CVE-2017-17053   | not affected                             |
