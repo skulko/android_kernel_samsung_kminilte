@@ -2330,7 +2330,7 @@ static int xfrm_user_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 
 		{
 			struct netlink_dump_control c = {
-                .start = link->start,
+              //  .start = link->start,
 				.dump = link->dump,
 				.done = link->done,
 			};
