@@ -66,21 +66,6 @@ void get_derived_permission_new(struct dentry *parent, struct dentry *dentry,
 	struct qstr q_obb = QSTR_LITERAL("obb");
 	struct qstr q_media = QSTR_LITERAL("media");
 	struct qstr q_cache = QSTR_LITERAL("cache");
-	unsigned long user_num;
-	int err;
-	struct qstr q_Android = QSTR_LITERAL("Android");
-	struct qstr q_data = QSTR_LITERAL("data");
-	struct qstr q_sandbox = QSTR_LITERAL("sandbox");
-	struct qstr q_obb = QSTR_LITERAL("obb");
-	struct qstr q_media = QSTR_LITERAL("media");
-	struct qstr q_cache = QSTR_LITERAL("cache");
-	unsigned long user_num;
-	int err;
-	struct qstr q_Android = QSTR_LITERAL("Android");
-	struct qstr q_data = QSTR_LITERAL("data");
-	struct qstr q_obb = QSTR_LITERAL("obb");
-	struct qstr q_media = QSTR_LITERAL("media");
-	struct qstr q_cache = QSTR_LITERAL("cache");
 
 	/* By default, each inode inherits from its parent.
 	 * the properties are maintained on its private fields
@@ -127,122 +112,6 @@ void get_derived_permission_new(struct dentry *parent, struct dentry *dentry,
 			/* App-specific directories inside; let anyone traverse */
 			info->data->perm = PERM_ANDROID_DATA;
 		} else if (qstr_case_eq(name, &q_sandbox)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID_DATA;
-		} else if (qstr_case_eq(name, &q_obb)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID_OBB;
-			info->data->under_obb = true;
-			/* Single OBB directory is always shared */
-		} else if (qstr_case_eq(name, &q_media)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID_MEDIA;
-		} else {
-			set_top(info, parent_info);
-		}
-		break;
-	case PERM_ANDROID_OBB:
-	case PERM_ANDROID_DATA:
-	case PERM_ANDROID_MEDIA:
-		info->data->perm = PERM_ANDROID_PACKAGE;
-		appid = get_appid(name->name);
-		if (appid != 0 && !is_excluded(name->name, parent_data->userid))
-			info->data->d_uid =
-				multiuser_get_uid(parent_data->userid, appid);
-		break;
-	case PERM_ANDROID_PACKAGE:
-		if (qstr_case_eq(name, &q_cache)) {
-			info->data->perm = PERM_ANDROID_PACKAGE_CACHE;
-			info->data->under_cache = true;
-		}
-		set_top(info, parent_info);
-		break;
-	switch (parent_data->perm) {
-	case PERM_INHERIT:
-	case PERM_ANDROID_PACKAGE_CACHE:
-		set_top(info, parent_info);
-		break;
-	case PERM_PRE_ROOT:
-		/* Legacy internal layout places users at top level */
-		info->data->perm = PERM_ROOT;
-		err = kstrtoul(name->name, 10, &user_num);
-		if (err)
-			info->data->userid = 0;
-		else
-			info->data->userid = user_num;
-		break;
-	case PERM_ROOT:
-		/* Assume masked off by default. */
-		if (qstr_case_eq(name, &q_Android)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID;
-			info->data->under_android = true;
-		} else {
-			set_top(info, parent_info);
-		}
-		break;
-	case PERM_ANDROID:
-		if (qstr_case_eq(name, &q_data)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID_DATA;
-		} else if (qstr_case_eq(name, &q_sandbox)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID_DATA;
-		} else if (qstr_case_eq(name, &q_obb)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID_OBB;
-			info->data->under_obb = true;
-			/* Single OBB directory is always shared */
-		} else if (qstr_case_eq(name, &q_media)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID_MEDIA;
-		} else {
-			set_top(info, parent_info);
-		}
-		break;
-	case PERM_ANDROID_OBB:
-	case PERM_ANDROID_DATA:
-	case PERM_ANDROID_MEDIA:
-		info->data->perm = PERM_ANDROID_PACKAGE;
-		appid = get_appid(name->name);
-		if (appid != 0 && !is_excluded(name->name, parent_data->userid))
-			info->data->d_uid =
-				multiuser_get_uid(parent_data->userid, appid);
-		break;
-	case PERM_ANDROID_PACKAGE:
-		if (qstr_case_eq(name, &q_cache)) {
-			info->data->perm = PERM_ANDROID_PACKAGE_CACHE;
-			info->data->under_cache = true;
-		}
-		set_top(info, parent_info);
-		break;
-	switch (parent_info->perm) {
-	switch (parent_data->perm) {
-	case PERM_INHERIT:
-	case PERM_ANDROID_PACKAGE_CACHE:
-		/* Already inherited above */
-		break;
-	case PERM_PRE_ROOT:
-		/* Legacy internal layout places users at top level */
-		info->data->perm = PERM_ROOT;
-		err = kstrtoul(name->name, 10, &user_num);
-		if (err)
-			info->data->userid = 0;
-		else
-			info->data->userid = user_num;
-		break;
-	case PERM_ROOT:
-		/* Assume masked off by default. */
-		if (qstr_case_eq(name, &q_Android)) {
-			/* App-specific directories inside; let anyone traverse */
-			info->data->perm = PERM_ANDROID;
-			info->data->under_android = true;
-		} else {
-			set_top(info, parent_info);
-		}
-		break;
-	case PERM_ANDROID:
-		if (qstr_case_eq(name, &q_data)) {
 			/* App-specific directories inside; let anyone traverse */
 			info->data->perm = PERM_ANDROID_DATA;
 		} else if (qstr_case_eq(name, &q_obb)) {
@@ -487,10 +356,6 @@ int need_graft_path(struct dentry *dentry)
 	if (!sbi->options.unshared_obb &&
 			parent_info->data->perm == PERM_ANDROID &&
 			qstr_case_eq(&dentry->d_name, &obb)) {
-	if (!sbi->options.unshared_obb &&
-			parent_info->data->perm == PERM_ANDROID &&
-			qstr_case_eq(&dentry->d_name, &obb)) {
-	if(parent_info->perm == PERM_ANDROID &&
 
 		/* /Android/obb is the base obbpath of DERIVED_UNIFIED */
 		if (!(sbi->options.multiuser == false
@@ -601,5 +466,4 @@ int setup_obb_dentry(struct dentry *dentry, struct path *lower_path)
 	}
 	return err;
 }
-
 
