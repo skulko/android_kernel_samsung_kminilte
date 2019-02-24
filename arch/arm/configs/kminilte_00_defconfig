@@ -91,7 +91,10 @@ CONFIG_CGROUP_FREEZER=y
 # CONFIG_CPUSETS is not set
 CONFIG_CGROUP_CPUACCT=y
 CONFIG_RESOURCE_COUNTERS=y
-# CONFIG_CGROUP_MEM_RES_CTLR is not set
+CONFIG_CGROUP_MEM_RES_CTLR=y
+CONFIG_CGROUP_MEM_RES_CTLR_SWAP=y
+CONFIG_CGROUP_MEM_RES_CTLR_SWAP_ENABLED=y
+# CONFIG_CGROUP_MEM_RES_CTLR_KMEM is not set
 # CONFIG_CGROUP_PERF is not set
 CONFIG_CGROUP_SCHED=y
 CONFIG_FAIR_GROUP_SCHED=y
@@ -667,7 +670,7 @@ CONFIG_ARM_FLUSH_CONSOLE_ON_RESTART=y
 # CONFIG_USE_OF is not set
 CONFIG_ZBOOT_ROM_TEXT=0
 CONFIG_ZBOOT_ROM_BSS=0
-CONFIG_CMDLINE="androidboot.baseband=exynos3470 androidboot.selinux=permissive androidboot.hardware=universal3470"
+CONFIG_CMDLINE="androidboot.baseband=exynos3470 androidboot.selinux=permissive zcache.enabled=1 zcache.compressor=lz4 androidboot.hardware=universal3470"
 # CONFIG_CMDLINE_FROM_BOOTLOADER is not set
 CONFIG_CMDLINE_EXTEND=y
 # CONFIG_CMDLINE_FORCE is not set
