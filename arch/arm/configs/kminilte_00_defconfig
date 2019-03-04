@@ -639,7 +639,7 @@ CONFIG_BOUNCE=y
 CONFIG_VIRT_TO_BUS=y
 # CONFIG_KSM is not set
 CONFIG_DEFAULT_MMAP_MIN_ADDR=4096
-# CONFIG_CLEANCACHE is not set
+CONFIG_CLEANCACHE=y
 CONFIG_CMA=y
 # CONFIG_CMA_DEVELOPEMENT is not set
 CONFIG_CMA_BEST_FIT=y
@@ -670,7 +670,7 @@ CONFIG_ARM_FLUSH_CONSOLE_ON_RESTART=y
 # CONFIG_USE_OF is not set
 CONFIG_ZBOOT_ROM_TEXT=0
 CONFIG_ZBOOT_ROM_BSS=0
-CONFIG_CMDLINE="androidboot.baseband=exynos3470 androidboot.selinux=permissive zcache.enabled=1 zcache.compressor=lz4 androidboot.hardware=universal3470"
+CONFIG_CMDLINE="androidboot.baseband=exynos3470 androidboot.selinux=permissive androidboot.hardware=universal3470"
 # CONFIG_CMDLINE_FROM_BOOTLOADER is not set
 CONFIG_CMDLINE_EXTEND=y
 # CONFIG_CMDLINE_FORCE is not set
@@ -1273,6 +1273,9 @@ CONFIG_BLK_DEV_RAM_SIZE=16384
 # CONFIG_ATA_OVER_ETH is not set
 # CONFIG_MG_DISK is not set
 # CONFIG_BLK_DEV_RBD is not set
+CONFIG_ZRAM=y
+CONFIG_ZRAM_LZ4_COMPRESS=y
+# CONFIG_ZRAM_DEBUG is not set
 
 #
 # Misc devices
