@@ -556,14 +556,13 @@ static int __init set_volt_table(void)
 					exynos3470_volt_table[i],
 					exynos3470_cpu_asv_abb[i]);
 		exynos3470_default_volt_table[i] = exynos3470_volt_table[i];
-					
 	}
 
 	if (samsung_rev() >= EXYNOS3470_REV_2_0) {
 		max_support_idx = L1;
-		min_support_idx = L11;
-		exynos3470_freq_table[L12].frequency = CPUFREQ_ENTRY_INVALID;
-		exynos3470_freq_table[L13].frequency = CPUFREQ_ENTRY_INVALID;
+		min_support_idx = L13;
+		//exynos3470_freq_table[L12].frequency = CPUFREQ_ENTRY_INVALID;
+		//exynos3470_freq_table[L13].frequency = CPUFREQ_ENTRY_INVALID;
 		exynos3470_freq_table[L0].frequency = CPUFREQ_ENTRY_INVALID;
 	} else {
 		max_support_idx = L0;
