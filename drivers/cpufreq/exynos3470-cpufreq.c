@@ -24,10 +24,9 @@
 #include <linux/sysfs.h>
 #include <linux/sysfs_helpers.h>
 
-#define	CPUFREQ_LEVEL_END	(L14 + 1)
+#define	CPUFREQ_LEVEL_END	(L13 + 1)
 #define CPU_UV_MV_MAX 1600000
 #define CPU_UV_MV_MIN 600000
-#define	CPUFREQ_LEVEL_END	(L13 + 1)
 
 int arm_lock;
 static int max_support_idx;
