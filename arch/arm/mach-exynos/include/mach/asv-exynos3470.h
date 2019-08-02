@@ -15,7 +15,7 @@
 
 #define ARM_DVFS_LEVEL_NR		(15)
 #define ARM_ASV_GRP_NR			(16)
-#define ARM_MAX_VOLT			(1500000)
+#define ARM_MAX_VOLT			(1600000)
 
 #define INT_DVFS_LEVEL_NR		(5)
 #define INT_ASV_GRP_NR			(16)
@@ -23,7 +23,7 @@
 
 #define G3D_DVFS_LEVEL_NR		(11)
 #define G3D_ASV_GRP_NR			(16)
-#define G3D_MAX_VOLT			(1500000)
+#define G3D_MAX_VOLT			(1600000)
 
 #define MIF_DVFS_LEVEL_NR		(5)
 #define MIF_ASV_GRP_NR			(16)

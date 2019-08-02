@@ -35,7 +35,7 @@
 
 #define VOLT_RANGE_STEP		25000
 #define MIN_VOLT 600000
-#define MAX_VOLT_ 1500000
+#define MAX_VOLT_ 1600000
 #define VOLT_DIV		6250
 
 #ifdef CONFIG_SMP
