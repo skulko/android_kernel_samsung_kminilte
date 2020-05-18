@@ -146,7 +146,7 @@ char *mali_freq_table = "600 533 450 300 225 150";
 #else
 int mali_gpu_clk = 266;
 int mali_gpu_vol = 900000;
-cchar *mali_freq_table = "600 533 440 340 300 266 160";
+char *mali_freq_table = "600 533 440 340 300 266 160";
 #endif
 
 static unsigned int GPU_MHZ	= 1000000;
