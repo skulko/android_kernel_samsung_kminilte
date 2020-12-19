@@ -42,6 +42,10 @@
  */
 /*#define SURFACE_TOUCH*/
 
+#ifdef CONFIG_FB
+#include <linux/notifier.h>
+#endif
+
 #define	USE_OPEN_CLOSE
 #ifdef USE_OPEN_CLOSE
 /*#define USE_OPEN_DWORK*/
@@ -308,6 +312,10 @@ struct synaptics_rmi4_data {
 	struct delayed_work rezero_work;
 
 	struct mutex rmi4_device_mutex;
+
+#ifdef CONFIG_FB
+	struct notifier_block fb_notif;
+#endif
 
 	int (*i2c_read)(struct synaptics_rmi4_data *pdata, unsigned short addr,
 			unsigned char *data, unsigned short length);
